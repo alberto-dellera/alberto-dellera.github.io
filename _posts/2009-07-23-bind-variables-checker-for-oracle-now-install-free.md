@@ -1,0 +1,36 @@
+---
+layout: post
+title: Bind Variables Checker for Oracle - now install-free
+date: 2009-07-23 11:23:12.000000000 +02:00
+type: post
+parent_id: '0'
+published: true
+password: ''
+status: publish
+categories:
+- tools
+tags: []
+meta: {}
+author:
+  login: alberto.dellera
+  email: alberto.dellera@gmail.com
+  display_name: Alberto Dell'Era
+  first_name: Alberto
+  last_name: Dell'Era
+permalink: "/blog/2009/07/23/bind-variables-checker-for-oracle-now-install-free/"
+---
+<p>I've finally managed to implement an install-free version of my utility to check for bind variables usage. The new script is named bvc_check.sql and when run, it examines the SQL statements stored in the library cache (through gv$sql) and dumps the ones that would be the same if the literals were replaced by bind variables. </p>
+<p>An example of the output:<br />
+[text]<br />
+------------------<br />
+statements count :  0000000003<br />
+bound    : select*from t where x=:n<br />
+example 1: select * from t where x = 2<br />
+example 2: select * from t where x = 3<br />
+------------------
+  
+[/text]  
+So we have 3 statements that are the same once literals are replaced with bind variables. Two examples are provided; the action of replacing the literals 2 and 3 with the bind variable :n makes the statements the same.
+
+The script are available on [this page](http://www.adellera.it/scripts_etcetera/bvc/index.html), that also explains the script workings in more detail and describes other scripts that might be of interest.
+

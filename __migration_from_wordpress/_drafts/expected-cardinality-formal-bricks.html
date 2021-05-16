@@ -1,0 +1,74 @@
+---
+layout: post
+title: Expected cardinality (Formal Bricks)
+date: 
+type: post
+parent_id: '0'
+published: false
+password: ''
+status: draft
+categories: []
+tags: []
+meta: {}
+author:
+  login: alberto.dellera
+  email: alberto.dellera@gmail.com
+  display_name: Alberto Dell'Era
+  first_name: Alberto
+  last_name: Dell'Era
+permalink: "/"
+---
+<p>This is the first of a series of posts where I'm going to take a simple and sometimes trivial Oracle-related scenario and reason about it using formal tools (that usually translates to "math" and "statistics"). This is a way of learning that has always rewarded me with a lot of insight and intuitions; hopefully that will apply to you as well.</p>
+<p>This post is going to formally discuss what "expected cardinality" means.</p>
+<p>As it is well known, one of the main task of the CBO is to estimate the number of rows (the cardinality) produced by each plan row (aka "row source operation") of a candidate plan, before the plan itself is executed.<br />
+The cardinality is usually a random variable - one of the reasons being that the SQL statement or fragment contains inputs (bind variables) whose actual value at execution time dictates the actual cardinality - and the inputs themselves are random variables, since they are decided by an external system (a "client") in a non-deterministic fashion. Given a random variable it is possible to calculate its "<a href="http://en.wikipedia.org/wiki/Expected_value">expected value</a>" (which is basically the same as the "average value"), which is what the CBO calculates (or tries to estimate).</p>
+<p>So, let's consider the simplest possible scenario of a filter predicate:<br />
+[sql]<br />
+select ...<br />
+  from t<br />
+ where x = :x;<br />
+[/sql]<br />
+and initially consider this table as an example:<br />
+[sql]<br />
+SQL> select * from t order by x;<br />
+         X<br />
+----------<br />
+         1<br />
+         4<br />
+         4<br />
+         4<br />
+         4<br />
+[/sql]<br />
+Let count(:x) be the number of rows fetched by this statement; obviously count(1)=1, count(4)=4, and count(:x) = 0 for all the other values of :x. Now, which is the average number of rows retrieved, that in statistics is usually called the <b>expected value</b> and denoted with E[count(:x)] ?</p>
+<p>Letting w(:x) ("w" stands for "workload") the <a href="http://en.wikipedia.org/wiki/Probability_mass_function">probability mass function</a> (often named "distribution" with a slight misnomer) of the random variable :x (which is obviously dictated by the client), we have<br />
+[text]<br />
+E[count(:x)] = sum ( count(:x) * w(:x) )</p>
+<p>over all possible values of :x<br />
+[/text]<br />
+For example, if the client always set :x = 1, then w(1)=1 and is zero for all other values, hence E[count(:x)] = 1 * 1 + 4 * 0 = 1. If the client sets :x to 1 and 4 with equal probability, E[count(:x)] = 1 * 0.5 + 4 * 0.5 = 2.5. </p>
+<p>It is interesting to consider the most important cases, and see how they apply to the CBO.</p>
+<h2>Uniform column distribution ( uniform count(:x) )</h2>
+<p>If count(:x) = constant = num_rows / num_distinct, we have<br />
+[text]<br />
+E[count(:x)] = num_rows / num_distinct * sum ( w (:x) )<br />
+[/text]<br />
+and, assuming that sum ( w (:x) ) = 1, that is, that <i>the client looks only for values contained in the table</i>, we have the well-known and intuitive formula that is used by the CBO in many scenarios (for example when the column has no histogram and :x is inside the min-max interval):<br />
+[text]<br />
+E[count(:x)] = num_rows / num_distinct<br />
+[/text]<br />
+Note in passing that assuming that sum ( w (:x) ) = 1 is the same of assuming that the statement always retrieves at least one row; the latter is an assumption frequently made by the CBO algorithms. Actually it is, in my opinion, the only reasonable assumption that the CBO can make, having no idea (currently?) of the actual distribution of values used by the client - and it is true, after all, that most of the time the client wants simply to <i>retrieve</i> rows  that it knows are already there.<br />
+But "most of the time" does not mean "always"; for example the client might want to simply <i>check</i> for the (non) existence of a BAD record (or, a NEW record in a "queue" table) which is (almost) never there, in which case the expected cardinality would be (almost) zero; in this case, the formula above obviously overestimates the cardinality.</p>
+<h2>Uniform workload distribution ( uniform w(:x) )</h2>
+<p>In this case, again assuming that sum ( w (:x) ) = 1, we have w(:x) = 1 / num_distinct and hence the previous formula again, since<br />
+[text]<br />
+E[count(:x)] = sum ( count(:x) ) / num_distinct = num_rows / num_distinct<br />
+[/text]<br />
+side note: it can be shown that the variance var[count(:x)] was zero for the previous case and can be far from zero in this case, hence in this second case the formula may not represent the population very well (quite obviously). Anyway, the expected value is exactly the same.</p>
+<p>More interestingly, an uniform distribution of w(.) is what we would get if table t were a child table (say, the ORDERS table) and we were joining from the parent (the CUSTOMERS table) without any preference for one record or the other (uniform distribution for the workload on the parent) - regardless of the child table having or not a uniform count(:x). This is regardless of whether we are joining properly (by using a join statement) or fetching the child rows with another statement: the second statement would experience this distribution. In fact, this case is the basis for the so called "NewDensity" used for height-balanced histograms, part of a set of "density improvements" to the CBO introduced in 10.2.0.4 and 11g, as we will see in another post.</p>
+<h2>Matched count(:x) and w(:x)</h2>
+<p>Now assume that w(:x) = count(:x) / num_rows, that is, that if a value accounts for 42% of the rows of the table it gets issued by the client 42% times; this is the distribution you would see if you continuosly picked a row at random, and then retrieve all the rows with the same value of x. We have<br />
+[text]<br />
+E[count(:x)] = sum ( count(:x) * count(:x) / num_rows ) =<br />
+ = sum ( count(:x) ^ 2) / num_rows<br />
+[/text]<br />
+Strange as it might seem, this formula is the core calculation of the value of the ("old") density that it is computed by dbms_stats - as we will discuss in another post.</p>

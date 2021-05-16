@@ -1,0 +1,166 @@
+---
+layout: post
+title: Fast refresh of aggregate-only materialized views with SUM - algorithm
+date: 2013-08-19 14:26:04.000000000 +02:00
+type: post
+parent_id: '0'
+published: true
+password: ''
+status: publish
+categories:
+- materialized views
+tags: []
+meta:
+  _syntaxhighlighter_encoded: '1'
+  _sg_subscribe-to-comments: taylor_raymond_mxb92@hotmail.com
+author:
+  login: alberto.dellera
+  email: alberto.dellera@gmail.com
+  display_name: Alberto Dell'Era
+  first_name: Alberto
+  last_name: Dell'Era
+permalink: "/blog/2013/08/19/fast-refresh-of-aggregate-only-materialized-views-with-sum-algorithm/"
+---
+<p>In this post I will illustrate the algorithm used by Oracle (in 11.2.0.3) to fast refresh a materialized view (MV) containing only the SUM aggregate function:</p>
+<p>[sql light="true"]<br />
+create materialized view test_mv<br />
+build immediate<br />
+refresh fast on demand<br />
+with rowid<br />
+as<br />
+select gby        as mv_gby,<br />
+       count(*)   as mv_cnt_star,<br />
+       sum  (dat) as mv_sum_dat,<br />
+       count(dat) as mv_cnt_dat<br />
+  from test_master<br />
+ where whe = 0<br />
+ group by gby<br />
+;<br />
+[/sql]</p>
+<p>Note that count(dat) is specified - you could avoid that if column dat is constrained to be not-null (as stated in the documentation), but I'm not covering that corner case here.</p>
+<p>The MV log is configured to "log everything":<br />
+[sql light="true"]<br />
+create materialized view log on test_master<br />
+with rowid ( whe, gby, dat ), sequence<br />
+including new values;<br />
+[/sql]</p>
+<p>In the <a href="http://www.adellera.it/blog/2013/08/05/fast-refresh-of-aggregate-only-materialized-views-introduction/">general introduction to aggregate-only MVs</a> we have seen how the refresh engine first marks the log rows, then inspects TMPDLT (loading its rows into the result cache at the same time) to classify its content as insert-only (if it contains only new values), delete-only (if it contains only old values) or general (if it contains a mix of new/old values). Here we illustrate the refreshing SQL in all three scenarios, extracted from the supporting <a href="http://34.247.94.223/wp-content/uploads/2013/08/post_0270_gby_mv_sum.zip">test case</a>.</p>
+<p><b>refresh for insert-only TMPDLT</b></p>
+<p>The refresh is made using this single merge statement:<br />
+[sql light="true"]<br />
+/* MV_REFRESH (MRG) */<br />
+merge into test_mv<br />
+using (<br />
+  with tmpdlt$_test_master as (<br />
+    -- check introduction post for statement<br />
+  )<br />
+  select gby,<br />
+         sum( 1 )                           as cnt_star,<br />
+         sum( 1 * decode(dat, null, 0, 1) ) as cnt_dat,<br />
+         nvl( sum( 1 * dat), 0 )            as sum_dat<br />
+    from (select gby, whe, dat<br />
+            from tmpdlt$_test_master<br />
+         ) as of snapshot(:b_scn)<br />
+   where whe = 0<br />
+   group by gby<br />
+) deltas<br />
+on ( sys_op_map_nonnull(test_mv.mv_gby) = sys_op_map_nonnull(deltas.gby) )<br />
+when matched then<br />
+  update set<br />
+    test_mv.mv_cnt_star = test_mv.mv_cnt_star + deltas.cnt_star,<br />
+    test_mv.mv_cnt_dat  = test_mv.mv_cnt_dat  + deltas.cnt_dat,<br />
+    test_mv.mv_sum_dat  = decode( test_mv.mv_cnt_dat + deltas.cnt_dat,<br />
+                                  0, null,<br />
+                                  nvl(test_mv.mv_sum_dat,0) + deltas.sum_dat<br />
+                                 )<br />
+when not matched then<br />
+  insert ( test_mv.mv_gby, test_mv.mv_cnt_dat, test_mv.mv_sum_dat, test_mv.mv_cnt_star )<br />
+  values ( deltas.gby, deltas.cnt_dat, decode (deltas.cnt_dat, 0, null, deltas.sum_dat), deltas.cnt_star)<br />
+[/sql]<br />
+It simply calculates the delta values to be propagated by grouping-and-summing the new values contained in TMPDLT that satisfy the where-clause (essentially, it executes the MV statement on the mv log without redundant values), and then looks for matches over the grouped-by expression (using the null-aware function sys_op_map_nonnull, more on this later). It then applies the deltas to the MV, or simply inserts them if no match is found. </p>
+<p>Note that mv_sum_dat (that materializes sum(dat)) is set to null if, and only if, (the updated value of) mv_cnt_dat (that materializes count(dat)) is zero (signaling that for this value of mv_gby, all values of dat in the master table are null). This is done in all three scenarios of the algorithm. </p>
+<p>The matching function sys_op_map_nonnull() is there to match null values with null values, since aggregating by null is perfectly legal, yet you cannot match null with null in a merge/join. This function returns a raw value that is never null, and set to 0xFF when the input is null and to the binary representation of the input postfixed with 0x00 for other input values. Note that a function-based index, named I_SNAP$_TEST_MV in our case, is automatically created on sys_op_map_nonnull(mv_gby) to give the CBO the opportunity to optimize the match (unless the MV is created specifying USING NO INDEX, which is probably almost never a good idea when you need to fast refresh).</p>
+<p>Note also that the master table, test_master, is not accessed at all, as it is always the case for SUM (but not necessarily for MAX, as we will see in the next post). This elegant decoupling (possible thanks to the mathematical properties of the addition, of course) of the master table from the MV greatly improves performance and also simplifies performance tuning. </p>
+<p><b>refresh for delete-only TMPDLT</b></p>
+<p>The refresh is made in two steps, the first being this update statement:<br />
+[sql light="true"]<br />
+/* MV_REFRESH (UPD) */<br />
+update /*+ bypass_ujvc */ (<br />
+  select test_mv.mv_cnt_dat,<br />
+         deltas .cnt_dat,<br />
+         test_mv.mv_sum_dat,<br />
+         deltas .sum_dat,<br />
+         test_mv.mv_cnt_star,<br />
+         deltas .cnt_star<br />
+    from test_mv,<br />
+         ( with tmpdlt$_test_master as (<br />
+             -- check introduction post for statement<br />
+           )<br />
+           select gby,<br />
+                  sum( -1 )                           as cnt_star<br />
+                  sum( -1 * decode(dat, null, 0, 1) ) as cnt_dat,<br />
+                  nvl( sum(-1 * dat), 0)              as sum_dat<br />
+             from (select gby, whe, dat<br />
+                     from tmpdlt$_test_master mas$<br />
+                  ) as of snapshot(:b_scn)<br />
+            where whe = 0<br />
+            group by gby<br />
+         ) deltas<br />
+   where sys_op_map_nonnull(test_mv.mv_gby) = sys_op_map_nonnull(deltas.gby)<br />
+)<br />
+set mv_cnt_star = mv_cnt_star + cnt_star,<br />
+    mv_cnt_dat  = mv_cnt_dat  + cnt_dat,<br />
+    mv_sum_dat  = decode(mv_cnt_dat + cnt_dat, 0, null, nvl(mv_sum_dat,0) + sum_dat)<br />
+[/sql]<br />
+this calculates the same deltas as the insert-only case, just with signs reversed since, of course, we are propagating deletes instead of inserts; it then applies them using an updatable join in-line view instead of a merge.</p>
+<p>Then, this delete statement is issued:<br />
+[sql light="true"]<br />
+/* MV_REFRESH (DEL) */<br />
+delete from test_mv where mv_cnt_star = 0;<br />
+[/sql]<br />
+this is because, when mv_cnt_star (that materializes count(*)) is zero after the deltas application, it means that all the rows belonging to that value of mv_gby have been deleted in the master table, and hence that value must be removed from the MV as well.</p>
+<p>Note that an index on mv_cnt_star is NOT automatically created (as of 11.2.0.3) - it might be a very good idea to create it, to avoid a full scan of the MV at every refresh, which is O(mv size) and not O(modifications) as the other steps (thus rendering the whole refresh process O(mv size)). </p>
+<p><b>refresh for mixed-DML TMPDLT</b></p>
+<p>The refresh is accomplished using a single merge statement, which is an augmented version of the insert-only statement plus a delete clause that implements the last part of the delete-only refresh:</p>
+<p>[sql light="true"]<br />
+/* MV_REFRESH (MRG) */<br />
+merge into test_mv<br />
+using (<br />
+ select gby,<br />
+        sum( decode(dml$$, 'I',  1, -1) )                          as cnt_star,<br />
+        sum( decode(dml$$, 'I',  1, -1) * decode(dat, null, 0, 1)) as cnt_dat,<br />
+        nvl( sum(decode(dml$$, 'I',  1, -1) * dat), 0)             as sum_dat<br />
+   from (select chartorowid(m_row$$) rid$, gby, whe, dat,<br />
+                decode(old_new$$, 'N', 'I', 'D') as dml$$,<br />
+                dmltype$$<br />
+           from mlog$_test_master<br />
+          where snaptime$$ &gt; :b_st0<br />
+        ) as of snapshot(:b_scn)<br />
+  where whe = 0<br />
+  group by gby<br />
+  ) deltas<br />
+on ( sys_op_map_nonnull(test_mv.mv_gby) = sys_op_map_nonnull(deltas.gby) )<br />
+when matched then<br />
+  update set<br />
+    test_mv.mv_cnt_star = test_mv.mv_cnt_star + deltas.cnt_star,<br />
+    test_mv.mv_cnt_dat  = test_mv.mv_cnt_dat  + deltas.cnt_dat,<br />
+    test_mv.mv_sum_dat  = decode( test_mv.mv_cnt_dat + deltas.cnt_dat,<br />
+                                  0, null,<br />
+                                  nvl(test_mv.mv_sum_dat,0) + deltas.sum_dat<br />
+                                ),<br />
+  delete where ( test_mv.mv_cnt_star = 0 )<br />
+when not matched then<br />
+  insert ( test_mv.mv_gby, test_mv.mv_cnt_dat, test_mv.mv_sum_dat, test_mv.mv_cnt_star )<br />
+  values ( deltas.gby, deltas.cnt_dat, decode (deltas.cnt_dat, 0, null, deltas.sum_dat), deltas.cnt_star)<br />
+   where (deltas.cnt_star &gt; 0)<br />
+[/sql]<br />
+Here the deltas are calculated by reversing the sign of "old" values (dml$$ not equal to 'I', which is the same as old_new$$ not equal to 'N'; note in passing that it does not distinguish between old_new$$ equal to 'O' or 'U', as stated in the introduction post), of course adjusting cnt_star and cnt_dat accordingly. </p>
+<p>The removal of rows that get their mv_cnt_star set to zero is performed as a side case of the update, which is very nice since it does not call for an index on that column. </p>
+<p>Surprisingly, this statement does not use TMPDLT, but reads straight from the log; I don't know the reason behind this, and whether this is always the case or if TMPDLT is sometimes used, depending, perhaps, on some heuristic decision. Surely, while using TMPDLT is mandatory in the other two cases (since the statements work only if their input is insert/delete only, and that is checked over TMPDLT only), it is just a possible optimization choice here. </p>
+<p><b>optimizations</b></p>
+<p>Knowing the "internal" workings presented here makes it vastly easier (I hope) to optimize the refresh process and avoid pitfalls; it is of course unfeasible to cover all possible real-life scenarios, but I can offer some general high-level considerations.</p>
+<p>Obviously, fast refreshing is better than complete refreshing only when the number of modifications stored in the MV log is "small" compared to the MV size. In this scenario the usual optimal values propagation plan reads from the log, computes TMPDLT (when used), and joins the MV using NESTED LOOPS using the (automatically created) index on sys_op_map_nonnull(mv_gby) - or possibly using HASH JOIN, or SORT MERGE JOIN, again using the same index. </p>
+<p>Hence the only optimization worth making is to create the index on mv_cnt_star, unless you can be absolutely sure that you will never be in the delete-only scenario, or unless you don't care about the resulting full MV scan.</p>
+<p>Since the master table is never read during the refresh, it can be left alone. This is great.</p>
+<p>The best access method for the log is usually a full table scan, since all rows are normally read, and hence usually nothing has to be done on the log. I can imagine that in rare cases one might consider optimizing the log by e.g. creating an index - for example a covering index on all the referenced columns; or one to speed up the analytic functions computations of TMPDLT avoiding the sort; or one prefixed by snaptime$$ if other MVs read from the log and refreshes at different times, etc.</p>
+<p>Maybe, sometimes, it might prove beneficial to disable TMPDLT, as discussed in the introduction post.</p>

@@ -1,0 +1,212 @@
+---
+layout: post
+title: fast refresh of outer-join-only materialized views - algorithm, part 2
+date: 2013-04-29 10:57:14.000000000 +02:00
+type: post
+parent_id: '0'
+published: true
+password: ''
+status: publish
+categories:
+- materialized views
+tags: []
+meta:
+  _sg_subscribe-to-comments: kellie.p.finley.owg50@msn.com
+  _syntaxhighlighter_encoded: '1'
+author:
+  login: alberto.dellera
+  email: alberto.dellera@gmail.com
+  display_name: Alberto Dell'Era
+  first_name: Alberto
+  last_name: Dell'Era
+permalink: "/blog/2013/04/29/fast-refresh-of-outer-join-only-materialized-views-algorithm-part-2/"
+---
+<p>In this post, we are going to complete <a href="http://www.adellera.it/blog/2013/04/22/fast-refresh-of-outer-join-only-materialized-views-algorithm-part-1/">part 1</a> illustrating the (considerably more complex) general case of a fast refresh from a master inner table without a unique constraint on the joined column(s).</p>
+<p>To recap, now the outer slice can be composed of more than one row, for example:</p>
+<p>ooo inn1<br />
+ooo inn2</p>
+<p>and hence, both the DEL and INS step must consider (and read) the whole outer slice even if only a subset of the inner rows have been modified. This requires both more resources and a considerably more complex algorithm. Let's illustrate it (the mandatory test case is <a href=" http://34.247.94.223/wp-content/uploads/2013/04/join_mv_outer_part2.zip">here</a>).</p>
+<p><b>The DEL macro step</b></p>
+<p>This sub step (named DEL.del by me) is performed first:<br />
+[sql light="true"]<br />
+/* MV_REFRESH (DEL) */<br />
+delete from test_mv where rowid in (<br />
+select rid<br />
+  from (<br />
+select test_mv.rowid rid,<br />
+       row_number() over (partition by test_outer_rowid order by rid$ nulls last) r,<br />
+       count(*)     over (partition by test_outer_rowid ) t_cnt,<br />
+       count(rid$)  over (partition by test_outer_rowid ) in_mvlog_cnt<br />
+  from test_mv, (select distinct rid$ from mlog$_test_inner) mvlog<br />
+ where /* read touched outer slices start */<br />
+       test_mv.test_outer_rowid in<br />
+          (<br />
+          select test_outer_rowid<br />
+            from test_mv<br />
+           where test_inner_rowid in (select rid$ from mlog$_test_inner)<br />
+          )<br />
+       /* read touched outer slices end */<br />
+   and test_mv.test_inner_rowid = mvlog.rid$(+)<br />
+       )<br />
+ /* victim selection start */<br />
+ where t_cnt &gt; 1<br />
+   and ( (in_mvlog_cnt = t_cnt and r &gt; 1)<br />
+          or<br />
+         (in_mvlog_cnt &lt; t_cnt and r &lt;= in_mvlog_cnt)<br />
+       )<br />
+ /* victim selection end */<br />
+)<br />
+[/sql]<br />
+followed by the DEL.upd one:<br />
+[sql light="true"]<br />
+/* MV_REFRESH (UPD) */<br />
+update test_mv<br />
+   set jinner = null, xinner = null, pkinner = null, test_inner_rowid = null<br />
+ where test_inner_rowid in (select rid$ from mlog$_test_inner)<br />
+[/sql]<br />
+This two steps combined do change all the rows of the MV marked in the log (and only them, other rows are not modified at all); the first step deletes some of them, leaving all the others to the second one, that sets to null their columns coming from the inner table.</p>
+<p>DEL.upd is straighforward. Let's illustrate the DEL.del algorithm:</p>
+<p>a) the section "read touched outer slices" fetches all the MV outer slices that have at least one of their rows marked in the log;<br />
+b) the slices are outer joined with the "mvlog" in-line view, so that rid$ will be nonnull for all rows marked in the log;<br />
+c) the analytic functions, for each outer slice separately, compute the number of rows (column t_cnt), the number of rows marked (column in_mvlog_cnt), and then attach a label (column r) that orders the row (order is not important at all besides non-marked rows being ordered last)<br />
+d) the where-predicate "victim selection" dictates which rows to delete.</p>
+<p>The victim selection predicate  has three sub-components, each implementing a different case (again, considering each slice separately):</p>
+<p><b>"t_cnt > 1"</b>: do not delete anything if the slice contains only one row (since it is for sure marked and hence will be nulled by DEL.upd)</p>
+<pre>
+             rid$ t_cnt in_mvlog_cnt r  action 
+ooo inn1 not-null     1            1 1  updated by DEL.upd   
+ 
+</pre>
+<p></p>
+<p><b>"in_mvlog_cnt = t_cnt and r > 1"</b>: all rows are marked, delete all but one (that will be nulled by DEL.upd)</p>
+<pre>
+             rid$ t_cnt in_mvlog_cnt r  action 
+ooo inn1 not-null     3            3 1  updated by DEL.upd    
+ooo inn2 not-null     3            3 2  deleted by DEL.del    
+ooo inn3 not-null     3            3 3  deleted by DEL.del    
+</pre>
+<p></p>
+<p><b>"in_mvlog_cnt < t_cnt and r <= in_mvlog_cnt"</b>: only some rows are marked; delete all marked rows, keep all the others.</p>
+<pre>
+             rid$ t_cnt in_mvlog_cnt r  action 
+ooo inn1 not-null     3            2 1  deleted by DEL.del    
+ooo inn2 not-null     3            2 2  deleted by DEL.del    
+ooo inn3     null     3            2 3  nothing    
+</pre>
+<p></p>
+<p><b>The INS macro step</b></p>
+<p>The first sub-step is INS.ins:</p>
+<p>[sql light="true"]<br />
+/* MV_REFRESH (INS) */<br />
+insert into test_mv<br />
+select  o.jouter,  o.xouter,  o.pkouter, o.rowid,<br />
+       jv.jinner, jv.xinner, jv.pkinner, jv.rid<br />
+  from ( select test_inner.rowid rid,<br />
+                test_inner.*<br />
+           from test_inner<br />
+          where rowid in (select rid$ from mlog_test_inner)<br />
+       ) jv, test_outer o<br />
+ where jv.jinner = o.jouter<br />
+[/sql]<br />
+this sub-step simply find matches in the outer table for the marked inner table rows (note that it is an inner join, not an outer join), and inserts them in the MV.</p>
+<p>Then, INS.del:<br />
+[sql light="true"]<br />
+/* MV_REFRESH (DEL) */<br />
+delete from test_mv sna$ where rowid in (<br />
+select rid<br />
+ from (<br />
+select test_mv.rowid rid,<br />
+       row_number()            over (partition by test_outer_rowid order by test_inner_rowid nulls first) r,<br />
+       count(*)                over (partition by test_outer_rowid ) t_cnt,<br />
+       count(test_inner_rowid) over (partition by test_outer_rowid ) nonnull_cnt<br />
+  from test_mv<br />
+ where /* read touched outer slices start */<br />
+       test_mv.test_outer_rowid in<br />
+          (<br />
+          select o.rowid<br />
+            from ( select test_inner.rowid rid$,<br />
+                          test_inner.*<br />
+                     from test_inner<br />
+                    where rowid in (select rid$ from mlog$_test_inner)<br />
+                 ) jv, test_outer o<br />
+           where jv.jinner = o.jouter<br />
+          )<br />
+      /* read touched outer slices end */<br />
+      )<br />
+ /* victim selection start */<br />
+ where t_cnt &gt; 1<br />
+   and ( (nonnull_cnt = 0 and r &gt; 1)<br />
+          or<br />
+         (nonnull_cnt &gt; 0 and r &lt;= t_cnt - nonnull_cnt)<br />
+       )<br />
+ /* victim selection end */<br />
+)<br />
+[/sql]<br />
+this substep has a SQL structure very similar to DEL.upd, hence I will simply outline the algorith: first, the statement identifies (in the "read touched outer slices" section) all the outer slices that had at least one rows inserted by INS.ins, by replaying its join; then, for each slice, it deletes any row, if it exists,  that has column "test_inner_rowid" set to null (check the "victim selection predicate"). </p>
+<p>Side note: I cannot understand how nonnull_cnt could be = 0 - possibly that is for robustness only or because it can handle variants of the DEL step I haven't observed. </p>
+<p><b>speeding up</b></p>
+<p>These are the indexes that the CBO might enjoy using to optimize the steps of the propagation from the inner table:<br />
+- DEL.del: test_mv(test_inner_rowid, test_outer_rowid)<br />
+- DEL.upd: test_mv(test_inner_rowid)<br />
+- INS.ins: test_outer(jouter)<br />
+- INS.del: test_outer(jouter) and test_mv(test_outer_rowid , test_inner_rowid)</p>
+<p>And hence, to optimize all steps:<br />
+- test_outer(jouter)<br />
+- test_mv(test_inner_rowid, test_outer_rowid)<br />
+- test_mv(test_outer_rowid , test_inner_rowid)</p>
+<p>And of course we need the usual index on test_inner(jinner) to optimize the propagation from the outer table (not shown in this post), unless we positively know that the outer table is never modified.</p>
+<p>Note that the two indexes test_mv(test_inner_rowid, test_outer_rowid) and test_mv(test_outer_rowid , test_inner_rowid) allow to skip visiting the MV altogether (except for deleting rows, obviously) and hence might reduce the number of consistent gets dramatically (the indexes are both "covering" indexes for the SQL statements we observed in the DEL.del and INS.del) . </p>
+<p>For example, in my test case (check ojoin_mv_test_case_indexed.sql), the plan for the DEL.del step is:<br />
+[sql light="true"]<br />
+--------------------------------------------------------------<br />
+| 0|DELETE STATEMENT                |                        |<br />
+| 1| DELETE                         |TEST_MV                 |<br />
+| 2|  NESTED LOOPS                  |                        |<br />
+| 3|   VIEW                         |VW_NSO_1                |<br />
+| 4|    SORT UNIQUE                 |                        |<br />
+| 5|     VIEW                       |                        |<br />
+| 6|      WINDOW SORT               |                        |<br />
+| 7|       HASH JOIN OUTER          |                        |<br />
+| 8|        HASH JOIN SEMI          |                        |<br />
+| 9|         INDEX FULL SCAN        |TEST_MV_TEST_INNER_ROWID|<br />
+|10|         VIEW                   |VW_NSO_2                |<br />
+|11|          NESTED LOOPS          |                        |<br />
+|12|           TABLE ACCESS FULL    |MLOG$_TEST_INNER        |<br />
+|13|           INDEX RANGE SCAN     |TEST_MV_TEST_INNER_ROWID|<br />
+|14|        VIEW                    |                        |<br />
+|15|         SORT UNIQUE            |                        |<br />
+|16|          TABLE ACCESS FULL     |MLOG$_TEST_INNER        |<br />
+|17|   MAT_VIEW ACCESS BY USER ROWID|TEST_MV                 |<br />
+--------------------------------------------------------------<br />
+5 - filter[ (T_CNT&gt;1 AND ((IN_MVLOG_CNT=T_CNT AND R&gt;1)<br />
+OR (IN_MVLOG_CNT&lt;T_CNT AND R&lt;=IN_MVLOG_CNT))) ]<br />
+...<br />
+[/sql]<br />
+Note the absence of any access to the MV to identify the rows to be deleted (row source operation 5 and its progeny; note the filter operation, which is the final "victim selection predicate"); the MV is only accessed to physically delete the rows. </p>
+<p>Ditto for the INS.del step:<br />
+[sql light="true"]<br />
+-------------------------------------------------------------------<br />
+| 0|DELETE STATEMENT                     |                        |<br />
+| 1| DELETE                              |TEST_MV                 |<br />
+| 2|  NESTED LOOPS                       |                        |<br />
+| 3|   VIEW                              |VW_NSO_1                |<br />
+| 4|    SORT UNIQUE                      |                        |<br />
+| 5|     VIEW                            |                        |<br />
+| 6|      WINDOW SORT                    |                        |<br />
+| 7|       HASH JOIN SEMI                |                        |<br />
+| 8|        INDEX FULL SCAN              |TEST_MV_TEST_INNER_ROWID|<br />
+| 9|        VIEW                         |VW_NSO_2                |<br />
+|10|         NESTED LOOPS                |                        |<br />
+|11|          NESTED LOOPS               |                        |<br />
+|12|           TABLE ACCESS FULL         |MLOG$_TEST_INNER        |<br />
+|13|           TABLE ACCESS BY USER ROWID|TEST_INNER              |<br />
+|14|          INDEX RANGE SCAN           |TEST_OUTER_JOUTER_IDX   |<br />
+|15|   MAT_VIEW ACCESS BY USER ROWID     |TEST_MV                 |<br />
+-------------------------------------------------------------------
+  
+5 - filter[ (T\_CNT\>1 AND ((NONNULL\_CNT=0 AND R\>1)  
+OR (NONNULL\_CNT\>0 AND R\<=T\_CNT-NONNULL\_CNT))) ]  
+...  
+[/sql]  
+  
+You might anyway create just the two "standard" single-column indexes on test\_mv(test\_inner\_rowid) and test\_mv(test\_outer\_rowid) and be happy with the resulting performance, even if you now will access the MV to get the "other" rowid - it all depends, of course, on your data (how many rows you have in each slice, and how many slices are touched by the marked rows) and how you modify the master tables. 

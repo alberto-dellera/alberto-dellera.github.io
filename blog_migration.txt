@@ -1,0 +1,71 @@
+
+from https://guillermo-roman.com/migrating-wordpress-blog-to-github-pages/
+  che referenzia https://www.deadlyfingers.net/code/migrating-from-wordpress-to-github-pages
+
+sudo apt-get install ruby-full
+
+https://pages.github.com/versions/ 
+  => jekill 3.9.0
+
+sudo gem install bundler 
+sudo gem install jekyll -v 3.9.0
+
+cdw "C:\Archive\Personal\TrilogyLectures\GitHub\alberto-dellera.github.io"
+
+bundle init
+bundle add jekyll -v 3.9.0 --skip-install
+bundle exec jekyll new --force --skip-bundle .
+
+errore "Could not find rexml-3.2.5 in any of the sources"
+
+sudo bundle install
+
+bundle exec jekyll new --force --skip-bundle .
+  New jekyll site installed in /cygdrive/c/Archive/Personal/TrilogyLectures/GitHub/alberto-dellera.github.io. 
+  Bundle install skipped. 
+
+bundle exec jekyll serve
+Could not find gem 'minima (~> 2.0)' in rubygems repository https://rubygems.org/ or installed locally.
+The source does not contain any versions of 'minima'
+Run `bundle install` to install missing gems.
+
+sudo bundle install
+
+bundle exec jekyll serve
+  server running ...
+
+http://localhost:4000
+  ok
+
+rimosso index.html che avevo creato come parte del setup di alberto-dellera.github.io
+che nascondeva il blog
+
+https://www.adellera.it/wp-admin/export.php
+
+export "all content"
+
+sudo gem install jekyll-import
+sudo gem install hpricot
+sudo gem install open_uri_redirections
+sudo gem install reverse_markdown
+
+cdw "C:\Archive\Personal\TrilogyLectures\GitHub\alberto-dellera.github.io\__migration_from_wordpress"
+
+--nota: in originale era "-rubygems", ma serve "-rrubygems" invece:
+ruby -rrubygems -e 'require "jekyll-import";
+JekyllImport::Importers::WordpressDotCom.run({
+  "source" => "./albertodell039era039sblog.WordPress.2021-05-16.xml",
+  "no_fetch_images" => false,
+  "assets_folder" => "assets/images"
+})'
+
+downloadata wordpress-html-to-md.rb da https://guillermo-roman.com/migrating-wordpress-blog-to-github-pages/
+
+ruby ./wordpress-html-to-md.rb "_posts"
+
+copiata assets nella root del repo 
+copitati _posts/*.md nella root/_posts del repo 
+
+nella root:
+bundle exec jekyll serve 
+

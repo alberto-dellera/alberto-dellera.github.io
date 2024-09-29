@@ -12,7 +12,6 @@ categories:
 - ash math
 tags: []
 meta:
-  _syntaxhighlighter_encoded: '1'
   _sg_subscribe-to-comments: miroslav.sivon@gmail.com
   _edit_last: '2'
 author:

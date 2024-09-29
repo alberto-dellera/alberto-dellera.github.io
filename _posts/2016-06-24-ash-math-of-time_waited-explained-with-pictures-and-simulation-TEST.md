@@ -25,6 +25,6 @@ permalink: "/blog/2016/06/23/ash-math-of-time_waited-explained-with-pictures-and
 
 Ullalla
 
-```sql
-SQL&gt; select ... from table( sim_pkg.events( ... ) );
+```plsql
+SQL> select ... from table( sim_pkg.events( ... ) );
 ```

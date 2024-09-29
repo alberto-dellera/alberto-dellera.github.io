@@ -28,7 +28,7 @@ permalink: "/blog/2016/06/23/ash-math-of-time_waited-explained-with-pictures-and
 <p><b>the simulator</b></p>
 <p>Obviously implemented in PL/SQL, as all great things in life, this pipelined function produces a stream of events:<br />
   
-```sql
+```
 SQL&gt; select ... from table( sim_pkg.events( ... ) );
 ```
 

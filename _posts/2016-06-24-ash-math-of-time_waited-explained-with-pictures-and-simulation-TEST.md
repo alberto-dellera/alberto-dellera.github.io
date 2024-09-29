@@ -1,7 +1,7 @@
 ---
 layout: post
-title: '"ASH math" of time_waited explained with pictures and simulation'
-date: 2016-06-23 11:41:18.000000000 +02:00
+title: '"ASH math" of time_waited explained with pictures and simulation TEST'
+date: 2016-06-24 11:41:18.000000000 +02:00
 type: post
 parent_id: '0'
 published: true

@@ -28,7 +28,7 @@ permalink: "/blog/2016/06/23/ash-math-of-time_waited-explained-with-pictures-and
 <p>All the code and spools are available <a href="http://34.247.94.223/wp-content/uploads/2016/06/post_0310_ash_math.zip">here</a>.</p>
 <p><b>the simulator</b></p>
 <p>Obviously implemented in PL/SQL, as all great things in life, this pipelined function produces a stream of events:<br />
-```plsql
+```sql
 SQL&gt; select ... from table( sim_pkg.events( ... ) );
 ```
 <p>SESSION_STATE ELAPSED_USEC<br />

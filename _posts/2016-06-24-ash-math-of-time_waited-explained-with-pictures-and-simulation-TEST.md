@@ -20,7 +20,7 @@ author:
   display_name: Alberto Dell'Era
   first_name: Alberto
   last_name: Dell'Era
-permalink: "/blog/2016/06/23/ash-math-of-time_waited-explained-with-pictures-and-simulation/"
+permalink: "/blog/2016/06/23/ash-math-of-time_waited-explained-with-pictures-and-simulation-TEST/"
 ---
 
 Ullalla

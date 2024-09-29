@@ -28,3 +28,7 @@ Ullalla
 ```plsql
 select ... from table( sim_pkg.events( ... ) );
 ```
+
+```plsql
+select a,b from tab where x = 0 and y = 'Y';
+```

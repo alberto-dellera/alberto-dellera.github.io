@@ -13,8 +13,6 @@ categories:
 tags: []
 meta:
 author:
-  email: alberto.dellera@gmail.com
-  display_name: Alberto Dell'Era
 permalink: "/blog/2016/06/23/ash-math-of-time_waited-explained-with-pictures-and-simulation-TEST/"
 ---
 
@@ -28,7 +26,7 @@ select ... from table( sim_pkg.events( ... ) );
 select a,b from tab where x = 0 and y = 'Y';
 ```
 
-```
+```plsql
 SESSION_STATE ELAPSED_USEC
 ------------- ----------------
 WAITING 180,759.713

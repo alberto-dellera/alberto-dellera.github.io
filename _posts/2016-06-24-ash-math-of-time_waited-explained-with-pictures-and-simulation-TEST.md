@@ -29,7 +29,7 @@ select a,b from tab where x = 0 and y = 'Y';
 ```
 
 ```
-<p>SESSION_STATE ELAPSED_USEC
+SESSION_STATE ELAPSED_USEC
 ------------- ----------------
 WAITING 180,759.713
 ON CPU 500,000.000
@@ -40,3 +40,4 @@ ON CPU 500,000.000
 WAITING 2,720,383.092
 ON CPU 500,000.000
 ```
+

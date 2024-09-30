@@ -26,16 +26,16 @@ select ... from table( sim_pkg.events( ... ) );
 select a,b from tab where x = 0 and y = 'Y';
 ```
 
-```plsql
+```
 SESSION_STATE ELAPSED_USEC
 ------------- ----------------
-WAITING 180,759.713
-ON CPU 500,000.000
-WAITING 164,796.844
-ON CPU 500,000.000
+WAITING   180,759.713
+ON CPU    500,000.000
+WAITING   164,796.844
+ON CPU    500,000.000
 WAITING 2,068,034.610
-ON CPU 500,000.000
+ON CPU    500,000.000
 WAITING 2,720,383.092
-ON CPU 500,000.000
+ON CPU    500,000.000
 ```
 

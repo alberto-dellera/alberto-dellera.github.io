@@ -12,14 +12,9 @@ categories:
 - ash math
 tags: []
 meta:
-  _sg_subscribe-to-comments: miroslav.sivon@gmail.com
-  _edit_last: '2'
 author:
-  login: alberto.dellera
   email: alberto.dellera@gmail.com
   display_name: Alberto Dell'Era
-  first_name: Alberto
-  last_name: Dell'Era
 permalink: "/blog/2016/06/23/ash-math-of-time_waited-explained-with-pictures-and-simulation-TEST/"
 ---
 
@@ -31,4 +26,17 @@ select ... from table( sim_pkg.events( ... ) );
 
 ```plsql
 select a,b from tab where x = 0 and y = 'Y';
+```
+
+```
+<p>SESSION_STATE ELAPSED_USEC
+------------- ----------------
+WAITING 180,759.713
+ON CPU 500,000.000
+WAITING 164,796.844
+ON CPU 500,000.000
+WAITING 2,068,034.610
+ON CPU 500,000.000
+WAITING 2,720,383.092
+ON CPU 500,000.000
 ```

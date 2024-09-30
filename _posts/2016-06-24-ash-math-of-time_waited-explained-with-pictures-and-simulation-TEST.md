@@ -43,3 +43,5 @@ Image:
 
 <p><a href="http://34.247.94.223/wp-content/uploads/2016/06/events.png"><img class="aligncenter size-full wp-image-825" title="ashevents" src="{{ site.baseurl }}/assets/images/2016/06/events.png" alt="histogram of event stream" width="480" height="480" /></a></p>
 
+<p><a href="{{ site.baseurl }}/assets/images/2016/06/events.png"><img class="aligncenter size-full wp-image-825" title="ashevents" src="{{ site.baseurl }}/assets/images/2016/06/events.png" alt="histogram of event stream" width="480" height="480" /></a></p>
+

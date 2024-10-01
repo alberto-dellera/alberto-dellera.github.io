@@ -15,7 +15,9 @@ meta:
 author:
   display_name: Alberto Dell'Era
 permalink: "/blog/2016/06/23/ash-math-of-time_waited-explained-with-pictures-and-simulation/"
-migrated_from_potsgres_and_checked: false
+migration_from_potsgres:
+  migrated: true
+  approved_on: false
 ---
 As explained by John Beresniewicz, Graham Wood and Uri Shaft in their excellent overview <a href="http://www.slideshare.net/jberesni/ash-architecture-and-advanced-usage-rmoug2014-36611678">ASH architecture and advanced usage</a>, avg( v$active_session_history.time_waited ) is not a correct estimate of the average latency (the "true average") esperienced by a wait event, the reason being that short events are less likely to be sampled. In order to correct this, the authors propose a formula that gives an unbiased estimate of the "true average".
 
@@ -24,7 +26,7 @@ In this post I will quantitatively illustrate why sampling is so bad for time_wa
 All the code and spools are available <a href="{{ site.baseurl }}/assets/files/2016/06/post_0310_ash_math.zip">here</a>.
 
 
-# the simulator
+## The simulator
 
 Obviously implemented in PL/SQL, as all great things in life, this pipelined function produces a stream of events:
   
@@ -33,8 +35,8 @@ SQL> select ... from table( sim_pkg.events( ... ) );
 ```
 
 ```
-SESSION_STATE ELAPSED_USEC
-------------- ----------------
+SESSION_STATE  ELAPSED_USEC
+------------- -------------
 WAITING         180,759.713
 ON CPU          500,000.000
 WAITING         164,796.844
@@ -57,7 +59,7 @@ SQL> select ...
 ```
 
 ```
- SAMPLE_ID SAMPLE_TIME SESSION_STATE TIME_WAITED
+ SAMPLE_ID SAMPLE_TIME SESSION_STATE      TIME_WAITED
 ---------- ----------- ------------- ----------------
          0           0 WAITING            180,759.713
          1     1000000 ON CPU                    .000
@@ -72,7 +74,7 @@ SQL> select ...
 Note that the function also reproduces the artificial zeros introduced by ASH's fix-up mechanism (i.e., event with time_waited = 2,720,383.092 spans three samples and hence has the two previous samples set to zero; same for its predecessor).
 Notice also that one "short" event has been missed by the reaping sampling hand.
 
-# investigation by pictures
+## Investigation by pictures
 
 Let's produce an event stream that follows an uniform distribution on the interval [0 .. 2 sec]; here is its histogram (produced by the wonderful geom_histogram() of R's ggplot2 package):
 
@@ -82,7 +84,8 @@ So we can visually appreciate and confirm that all events are contained in the r
 
 Let's sample the stream, ignore the artificial zeros, and superimpose the samples' histogram to the previous one:
 
-<p><a href="{{ site.baseurl }}/assets/images/2016/06/combined.png"><img class="aligncenter size-full wp-image-828" title="ashcombined" src="{{ site.baseurl }}/assets/images/2016/06/combined.png" alt="histogram of events and samples combined" width="480" height="480" /></a>
+<a href="{{ site.baseurl }}/assets/images/2016/06/combined.png"><img class="aligncenter size-full wp-image-828" title="ashcombined" src="{{ site.baseurl }}/assets/images/2016/06/combined.png" alt="histogram of events and samples combined" width="480" height="480" /></a>
+
 
 So we can see that events longer then the sampling interval T (1sec) are always sampled and hence faithfully represented (the histograms bars match perfectly), but shorter events are not. For example, note that for time_waited = 0.5sec only half of the events are represented - in other words, the probability of being sampled is linearly proportional with time_waited.
 
@@ -92,7 +95,7 @@ Now check avg(time_waited), the dashed blue line: because of the bias of the sam
 
 From the above illustration, it is evident that avg(time_waited) is going to always be an <b>over</b>estimation, regardless of the pdf of the event stream. Hence, it can be never used reliably when tuning of analyzing.
 
-# ASH math to the rescue
+## ASH math to the rescue
 
 Since the simulator is written in PL/SQL, we can plug it in place of v$ash in the formula of the unbiased estimator and check its output easily:
 

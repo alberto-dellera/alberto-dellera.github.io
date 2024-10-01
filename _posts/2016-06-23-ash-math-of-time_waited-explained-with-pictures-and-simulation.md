@@ -15,8 +15,7 @@ meta:
 author: Alberto Dell'Era
 permalink: "/blog/2016/06/23/ash-math-of-time_waited-explained-with-pictures-and-simulation/"
 migration_from_potsgres:
-  migrated: true
-  approved_on: false
+  approved_on: 20241001
 ---
 As explained by John Beresniewicz, Graham Wood and Uri Shaft in their excellent overview <a href="http://www.slideshare.net/jberesni/ash-architecture-and-advanced-usage-rmoug2014-36611678">ASH architecture and advanced usage</a>, avg( v$active_session_history.time_waited ) is not a correct estimate of the average latency (the "true average") esperienced by a wait event, the reason being that short events are less likely to be sampled. In order to correct this, the authors propose a formula that gives an unbiased estimate of the "true average".
 

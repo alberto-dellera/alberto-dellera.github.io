@@ -12,8 +12,7 @@ categories:
 - ash math
 tags: []
 meta:
-author:
-  display_name: Alberto Dell'Era
+author: Alberto Dell'Era
 permalink: "/blog/2016/06/23/ash-math-of-time_waited-explained-with-pictures-and-simulation/"
 migration_from_potsgres:
   migrated: true

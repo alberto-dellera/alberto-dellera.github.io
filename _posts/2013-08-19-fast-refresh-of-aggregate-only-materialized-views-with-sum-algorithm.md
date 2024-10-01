@@ -11,78 +11,75 @@ categories:
 - materialized views
 tags: []
 meta:
-  _syntaxhighlighter_encoded: '1'
-  _sg_subscribe-to-comments: taylor_raymond_mxb92@hotmail.com
-author:
-  login: alberto.dellera
-  email: alberto.dellera@gmail.com
-  display_name: Alberto Dell'Era
-  first_name: Alberto
-  last_name: Dell'Era
+author: Alberto Dell'Era
 permalink: "/blog/2013/08/19/fast-refresh-of-aggregate-only-materialized-views-with-sum-algorithm/"
+migration_from_wordpress:
+  approved_on: false
 ---
 In this post I will illustrate the algorithm used by Oracle (in 11.2.0.3) to fast refresh a materialized view (MV) containing only the SUM aggregate function:
 
-[sql light="true"]  
-create materialized view test\_mv  
+```plsql
+create materialized view test_mv  
 build immediate  
 refresh fast on demand  
 with rowid  
 as  
-select gby as mv\_gby,  
- count(\*) as mv\_cnt\_star,  
- sum (dat) as mv\_sum\_dat,  
- count(dat) as mv\_cnt\_dat  
- from test\_master  
+select gby as mv_gby,  
+ count(*) as mv_cnt_star,  
+ sum (dat) as mv_sum_dat,  
+ count(dat) as mv_cnt_dat  
+ from test_master  
  where whe = 0  
  group by gby  
 ;  
-[/sql]
+```
 
 Note that count(dat) is specified - you could avoid that if column dat is constrained to be not-null (as stated in the documentation), but I'm not covering that corner case here.
 
 The MV log is configured to "log everything":  
-[sql light="true"]  
+
+```plsql 
 create materialized view log on test\_master  
 with rowid ( whe, gby, dat ), sequence  
 including new values;  
-[/sql]
+```
 
-In the [general introduction to aggregate-only MVs](http://www.adellera.it/blog/2013/08/05/fast-refresh-of-aggregate-only-materialized-views-introduction/) we have seen how the refresh engine first marks the log rows, then inspects TMPDLT (loading its rows into the result cache at the same time) to classify its content as insert-only (if it contains only new values), delete-only (if it contains only old values) or general (if it contains a mix of new/old values). Here we illustrate the refreshing SQL in all three scenarios, extracted from the supporting [test case](http://34.247.94.223/wp-content/uploads/2013/08/post_0270_gby_mv_sum.zip).
+In the [general introduction to aggregate-only MVs]({{ site.baseurl }}/blog/2013/08/05/fast-refresh-of-aggregate-only-materialized-views-introduction/) we have seen how the refresh engine first marks the log rows, then inspects TMPDLT (loading its rows into the result cache at the same time) to classify its content as insert-only (if it contains only new values), delete-only (if it contains only old values) or general (if it contains a mix of new/old values). Here we illustrate the refreshing SQL in all three scenarios, extracted from the supporting [test case]({{ site.baseurl }}/2013/08/post_0270_gby_mv_sum.zip).
 
-**refresh for insert-only TMPDLT**
+## refresh for insert-only TMPDLT
 
 The refresh is made using this single merge statement:  
-[sql light="true"]  
-/\* MV\_REFRESH (MRG) \*/  
-merge into test\_mv  
+```plsql  
+/* MV_REFRESH (MRG) */  
+merge into test_mv  
 using (  
- with tmpdlt$\_test\_master as (  
+ with tmpdlt$_test_master as (  
  -- check introduction post for statement  
  )  
  select gby,  
- sum( 1 ) as cnt\_star,  
- sum( 1 \* decode(dat, null, 0, 1) ) as cnt\_dat,  
- nvl( sum( 1 \* dat), 0 ) as sum\_dat  
+ sum( 1 ) as cnt_star,  
+ sum( 1 * decode(dat, null, 0, 1) ) as cnt_dat,  
+ nvl( sum( 1 * dat), 0 ) as sum_dat  
  from (select gby, whe, dat  
- from tmpdlt$\_test\_master  
- ) as of snapshot(:b\_scn)  
+ from tmpdlt$_test_master  
+ ) as of snapshot(:b_scn)  
  where whe = 0  
  group by gby  
 ) deltas  
-on ( sys\_op\_map\_nonnull(test\_mv.mv\_gby) = sys\_op\_map\_nonnull(deltas.gby) )  
+on ( sys_op_map_nonnull(test_mv.mv_gby) = sys_op_map_nonnull(deltas.gby) )  
 when matched then  
  update set  
- test\_mv.mv\_cnt\_star = test\_mv.mv\_cnt\_star + deltas.cnt\_star,  
- test\_mv.mv\_cnt\_dat = test\_mv.mv\_cnt\_dat + deltas.cnt\_dat,  
- test\_mv.mv\_sum\_dat = decode( test\_mv.mv\_cnt\_dat + deltas.cnt\_dat,  
+ test_mv.mv_cnt_star = test_mv.mv_cnt_star + deltas.cnt_star,  
+ test_mv.mv_cnt_dat = test_mv.mv_cnt_dat + deltas.cnt_dat,  
+ test_mv.mv_sum_dat = decode( test_mv.mv_cnt_dat + deltas.cnt_dat,  
  0, null,  
- nvl(test\_mv.mv\_sum\_dat,0) + deltas.sum\_dat  
+ nvl(test_mv.mv_sum_dat,0) + deltas.sum_dat  
  )  
 when not matched then  
- insert ( test\_mv.mv\_gby, test\_mv.mv\_cnt\_dat, test\_mv.mv\_sum\_dat, test\_mv.mv\_cnt\_star )  
- values ( deltas.gby, deltas.cnt\_dat, decode (deltas.cnt\_dat, 0, null, deltas.sum\_dat), deltas.cnt\_star)  
-[/sql]  
+ insert ( test_mv.mv_gby, test_mv.mv_cnt_dat, test_mv.mv_sum_dat, test_mv.mv_cnt_star )  
+ values ( deltas.gby, deltas.cnt_dat, decode (deltas.cnt_dat, 0, null, deltas.sum_dat), deltas.cnt_star)  
+```
+
 It simply calculates the delta values to be propagated by grouping-and-summing the new values contained in TMPDLT that satisfy the where-clause (essentially, it executes the MV statement on the mv log without redundant values), and then looks for matches over the grouped-by expression (using the null-aware function sys\_op\_map\_nonnull, more on this later). It then applies the deltas to the MV, or simply inserts them if no match is found.
 
 Note that mv\_sum\_dat (that materializes sum(dat)) is set to null if, and only if, (the updated value of) mv\_cnt\_dat (that materializes count(dat)) is zero (signaling that for this value of mv\_gby, all values of dat in the master table are null). This is done in all three scenarios of the algorithm.

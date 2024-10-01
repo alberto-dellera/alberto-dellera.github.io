@@ -13,8 +13,8 @@ tags: []
 meta:
 author: Alberto Dell'Era
 permalink: "/blog/2013/08/23/fast-refresh-of-aggregate-only-materialized-views-with-max-algorithm/"
-migration_from_potsgres:
-  approved_on: false
+migration_from_wordpress:
+  approved_on: 20241001
 ---
 In this post I will illustrate the algorithm used by Oracle (in 11.2.0.3) to fast refresh a materialized view (MV) containing only the MAX aggregate function:
 

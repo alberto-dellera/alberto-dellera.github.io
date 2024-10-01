@@ -25,10 +25,10 @@ refresh fast on demand
 with rowid  
 as  
 select gby as mv_gby,  
- count(*) as mv_cnt_star,  
- sum (dat) as mv_sum_dat,  
- count(dat) as mv_cnt_dat  
- from test_master  
+       count(*) as mv_cnt_star,  
+       sum (dat) as mv_sum_dat,  
+       count(dat) as mv_cnt_dat  
+  from test_master  
  where whe = 0  
  group by gby  
 ;  
@@ -53,28 +53,28 @@ The refresh is made using this single merge statement:
 /* MV_REFRESH (MRG) */  
 merge into test_mv  
 using (  
- with tmpdlt$_test_master as (  
- -- check introduction post for statement  
- )  
- select gby,  
- sum( 1 ) as cnt_star,  
- sum( 1 * decode(dat, null, 0, 1) ) as cnt_dat,  
- nvl( sum( 1 * dat), 0 ) as sum_dat  
- from (select gby, whe, dat  
- from tmpdlt$_test_master  
- ) as of snapshot(:b_scn)  
- where whe = 0  
- group by gby  
+  with tmpdlt$_test_master as (  
+  -- check introduction post for statement  
+  )  
+  select gby,  
+         sum( 1 ) as cnt_star,  
+         sum( 1 * decode(dat, null, 0, 1) ) as cnt_dat,  
+         nvl( sum( 1 * dat), 0 ) as sum_dat  
+    from (select gby, whe, dat  
+           from tmpdlt$_test_master  
+         ) as of snapshot(:b_scn)  
+   where whe = 0  
+   group by gby  
 ) deltas  
 on ( sys_op_map_nonnull(test_mv.mv_gby) = sys_op_map_nonnull(deltas.gby) )  
 when matched then  
  update set  
- test_mv.mv_cnt_star = test_mv.mv_cnt_star + deltas.cnt_star,  
- test_mv.mv_cnt_dat = test_mv.mv_cnt_dat + deltas.cnt_dat,  
- test_mv.mv_sum_dat = decode( test_mv.mv_cnt_dat + deltas.cnt_dat,  
- 0, null,  
- nvl(test_mv.mv_sum_dat,0) + deltas.sum_dat  
- )  
+         test_mv.mv_cnt_star = test_mv.mv_cnt_star + deltas.cnt_star,  
+         test_mv.mv_cnt_dat = test_mv.mv_cnt_dat + deltas.cnt_dat,  
+         test_mv.mv_sum_dat = decode( test_mv.mv_cnt_dat + deltas.cnt_dat,  
+                                      0, null,  
+                                      nvl(test_mv.mv_sum_dat,0) + deltas.sum_dat  
+                                    )  
 when not matched then  
  insert ( test_mv.mv_gby, test_mv.mv_cnt_dat, test_mv.mv_sum_dat, test_mv.mv_cnt_star )  
  values ( deltas.gby, deltas.cnt_dat, decode (deltas.cnt_dat, 0, null, deltas.sum_dat), deltas.cnt_star)  
@@ -91,47 +91,49 @@ Note also that the master table, test\_master, is not accessed at all, as it is 
 ## Refresh for delete-only TMPDLT
 
 The refresh is made in two steps, the first being this update statement:  
-[sql light="true"]  
-/\* MV\_REFRESH (UPD) \*/  
-update /\*+ bypass\_ujvc \*/ (  
- select test\_mv.mv\_cnt\_dat,  
- deltas .cnt\_dat,  
- test\_mv.mv\_sum\_dat,  
- deltas .sum\_dat,  
- test\_mv.mv\_cnt\_star,  
- deltas .cnt\_star  
- from test\_mv,  
- ( with tmpdlt$\_test\_master as (  
- -- check introduction post for statement  
- )  
- select gby,  
- sum( -1 ) as cnt\_star  
- sum( -1 \* decode(dat, null, 0, 1) ) as cnt\_dat,  
- nvl( sum(-1 \* dat), 0) as sum\_dat  
- from (select gby, whe, dat  
- from tmpdlt$\_test\_master mas$  
- ) as of snapshot(:b\_scn)  
- where whe = 0  
- group by gby  
- ) deltas  
- where sys\_op\_map\_nonnull(test\_mv.mv\_gby) = sys\_op\_map\_nonnull(deltas.gby)  
+```plsql  
+/* MV_REFRESH (UPD) */  
+update /*+ bypass_ujvc */ (  
+  select test_mv.mv_cnt_dat,  
+         deltas .cnt_dat,  
+         test_mv.mv_sum_dat,  
+         deltas .sum_dat,  
+         test_mv.mv_cnt_star,  
+         deltas .cnt_star  
+    from test_mv,  
+         ( with tmpdlt$_test_master as (  
+            -- check introduction post for statement  
+           )  
+           select gby,  
+                  sum( -1 ) as cnt_star  
+                  sum( -1 * decode(dat, null, 0, 1) ) as cnt_dat,  
+                  nvl( sum(-1 * dat), 0) as sum_dat  
+              from (select gby, whe, dat  
+                      from tmpdlt$_test_master mas$  
+                   ) as of snapshot(:b_scn)  
+            where whe = 0  
+            group by gby  
+         ) deltas  
+  where sys_op_map_nonnull(test_mv.mv_gby) = sys_op_map_nonnull(deltas.gby)  
 )  
-set mv\_cnt\_star = mv\_cnt\_star + cnt\_star,  
- mv\_cnt\_dat = mv\_cnt\_dat + cnt\_dat,  
- mv\_sum\_dat = decode(mv\_cnt\_dat + cnt\_dat, 0, null, nvl(mv\_sum\_dat,0) + sum\_dat)  
-[/sql]  
+set mv_cnt_star = mv_cnt_star + cnt_star,  
+ mv_cnt_dat = mv_cnt_dat + cnt_dat,  
+ mv_sum_dat = decode(mv_cnt_dat + cnt_dat, 0, null, nvl(mv_sum_dat,0) + sum_dat)  
+```
+
 this calculates the same deltas as the insert-only case, just with signs reversed since, of course, we are propagating deletes instead of inserts; it then applies them using an updatable join in-line view instead of a merge.
 
 Then, this delete statement is issued:  
-[sql light="true"]  
-/\* MV\_REFRESH (DEL) \*/  
-delete from test\_mv where mv\_cnt\_star = 0;  
-[/sql]  
+```plsql   
+/* MV_REFRESH (DEL) */  
+delete from test_mv where mv_cnt_star = 0;  
+```
+
 this is because, when mv\_cnt\_star (that materializes count(\*)) is zero after the deltas application, it means that all the rows belonging to that value of mv\_gby have been deleted in the master table, and hence that value must be removed from the MV as well.
 
 Note that an index on mv\_cnt\_star is NOT automatically created (as of 11.2.0.3) - it might be a very good idea to create it, to avoid a full scan of the MV at every refresh, which is O(mv size) and not O(modifications) as the other steps (thus rendering the whole refresh process O(mv size)).
 
-**refresh for mixed-DML TMPDLT**
+## Refresh for mixed-DML TMPDLT
 
 The refresh is accomplished using a single merge statement, which is an augmented version of the insert-only statement plus a delete clause that implements the last part of the delete-only refresh:
 
@@ -139,33 +141,33 @@ The refresh is accomplished using a single merge statement, which is an augmente
 /* MV_REFRESH (MRG) */  
 merge into test_mv  
 using (  
- select gby,  
- sum( decode(dml$$, 'I', 1, -1) ) as cnt_star,  
- sum( decode(dml$$, 'I', 1, -1) * decode(dat, null, 0, 1)) as cnt_dat,  
- nvl( sum(decode(dml$$, 'I', 1, -1) * dat), 0) as sum_dat  
- from (select chartorowid(m_row$$) rid$, gby, whe, dat,  
- decode(old_new$$, 'N', 'I', 'D') as dml$$,  
- dmltype$$  
- from mlog$_test_master  
- where snaptime$$ > :b_st0  
- ) as of snapshot(:b_scn)  
- where whe = 0  
- group by gby  
+  select gby,  
+         sum( decode(dml$$, 'I', 1, -1) ) as cnt_star,  
+         sum( decode(dml$$, 'I', 1, -1) * decode(dat, null, 0, 1)) as cnt_dat,  
+         nvl( sum(decode(dml$$, 'I', 1, -1) * dat), 0) as sum_dat  
+    from (select chartorowid(m_row$$) rid$, gby, whe, dat,  
+                 decode(old_new$$, 'N', 'I', 'D') as dml$$,  
+                 dmltype$$  
+            from mlog$_test_master  
+           where snaptime$$ > :b_st0  
+         ) as of snapshot(:b_scn)  
+   where whe = 0  
+   group by gby  
  ) deltas  
 on ( sys_op_map_nonnull(test_mv.mv_gby) = sys_op_map_nonnull(deltas.gby) )  
 when matched then  
  update set  
- test_mv.mv_cnt_star = test_mv.mv_cnt_star + deltas.cnt_star,  
- test_mv.mv_cnt_dat = test_mv.mv_cnt_dat + deltas.cnt_dat,  
- test_mv.mv_sum_dat = decode( test_mv.mv_cnt_dat + deltas.cnt_dat,  
- 0, null,  
- nvl(test_mv.mv_sum_dat,0) + deltas.sum_dat  
- ),  
+          test_mv.mv_cnt_star = test_mv.mv_cnt_star + deltas.cnt_star,  
+          test_mv.mv_cnt_dat = test_mv.mv_cnt_dat + deltas.cnt_dat,  
+          test_mv.mv_sum_dat = decode( test_mv.mv_cnt_dat + deltas.cnt_dat,  
+                                       0, null,  
+                                       nvl(test_mv.mv_sum_dat,0) + deltas.sum_dat  
+                                      ),  
  delete where ( test_mv.mv_cnt_star = 0 )  
 when not matched then  
  insert ( test_mv.mv_gby, test_mv.mv_cnt_dat, test_mv.mv_sum_dat, test_mv.mv_cnt_star )  
  values ( deltas.gby, deltas.cnt_dat, decode (deltas.cnt_dat, 0, null, deltas.sum_dat), deltas.cnt_star)  
- where (deltas.cnt_star > 0)  
+  where (deltas.cnt_star > 0)  
 ```
 
 Here the deltas are calculated by reversing the sign of "old" values (dml$$ not equal to 'I', which is the same as old\_new$$ not equal to 'N'; note in passing that it does not distinguish between old\_new$$ equal to 'O' or 'U', as stated in the introduction post), of course adjusting cnt\_star and cnt\_dat accordingly.

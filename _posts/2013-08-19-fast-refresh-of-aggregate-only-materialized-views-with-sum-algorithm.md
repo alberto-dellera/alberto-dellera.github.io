@@ -14,7 +14,7 @@ meta:
 author: Alberto Dell'Era
 permalink: "/blog/2013/08/19/fast-refresh-of-aggregate-only-materialized-views-with-sum-algorithm/"
 migration_from_wordpress:
-  approved_on: false
+  approved_on: 20241001
 ---
 In this post I will illustrate the algorithm used by Oracle (in 11.2.0.3) to fast refresh a materialized view (MV) containing only the SUM aggregate function:
 
@@ -39,7 +39,7 @@ Note that count(dat) is specified - you could avoid that if column dat is constr
 The MV log is configured to "log everything":  
 
 ```plsql 
-create materialized view log on test\_master  
+create materialized view log on test_master  
 with rowid ( whe, gby, dat ), sequence  
 including new values;  
 ```

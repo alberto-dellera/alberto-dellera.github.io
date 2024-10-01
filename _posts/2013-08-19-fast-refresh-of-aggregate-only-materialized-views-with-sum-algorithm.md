@@ -46,7 +46,7 @@ including new values;
 
 In the [general introduction to aggregate-only MVs]({{ site.baseurl }}/blog/2013/08/05/fast-refresh-of-aggregate-only-materialized-views-introduction/) we have seen how the refresh engine first marks the log rows, then inspects TMPDLT (loading its rows into the result cache at the same time) to classify its content as insert-only (if it contains only new values), delete-only (if it contains only old values) or general (if it contains a mix of new/old values). Here we illustrate the refreshing SQL in all three scenarios, extracted from the supporting [test case]({{ site.baseurl }}/2013/08/post_0270_gby_mv_sum.zip).
 
-## refresh for insert-only TMPDLT
+## Refresh for insert-only TMPDLT
 
 The refresh is made using this single merge statement:  
 ```plsql  
@@ -88,7 +88,7 @@ The matching function sys\_op\_map\_nonnull() is there to match null values with
 
 Note also that the master table, test\_master, is not accessed at all, as it is always the case for SUM (but not necessarily for MAX, as we will see in the next post). This elegant decoupling (possible thanks to the mathematical properties of the addition, of course) of the master table from the MV greatly improves performance and also simplifies performance tuning.
 
-**refresh for delete-only TMPDLT**
+## Refresh for delete-only TMPDLT
 
 The refresh is made in two steps, the first being this update statement:  
 [sql light="true"]  
@@ -135,45 +135,46 @@ Note that an index on mv\_cnt\_star is NOT automatically created (as of 11.2.0.3
 
 The refresh is accomplished using a single merge statement, which is an augmented version of the insert-only statement plus a delete clause that implements the last part of the delete-only refresh:
 
-[sql light="true"]  
-/\* MV\_REFRESH (MRG) \*/  
-merge into test\_mv  
+```plsql  
+/* MV_REFRESH (MRG) */  
+merge into test_mv  
 using (  
  select gby,  
- sum( decode(dml$$, 'I', 1, -1) ) as cnt\_star,  
- sum( decode(dml$$, 'I', 1, -1) \* decode(dat, null, 0, 1)) as cnt\_dat,  
- nvl( sum(decode(dml$$, 'I', 1, -1) \* dat), 0) as sum\_dat  
- from (select chartorowid(m\_row$$) rid$, gby, whe, dat,  
- decode(old\_new$$, 'N', 'I', 'D') as dml$$,  
+ sum( decode(dml$$, 'I', 1, -1) ) as cnt_star,  
+ sum( decode(dml$$, 'I', 1, -1) * decode(dat, null, 0, 1)) as cnt_dat,  
+ nvl( sum(decode(dml$$, 'I', 1, -1) * dat), 0) as sum_dat  
+ from (select chartorowid(m_row$$) rid$, gby, whe, dat,  
+ decode(old_new$$, 'N', 'I', 'D') as dml$$,  
  dmltype$$  
- from mlog$\_test\_master  
- where snaptime$$ \> :b\_st0  
- ) as of snapshot(:b\_scn)  
+ from mlog$_test_master  
+ where snaptime$$ > :b_st0  
+ ) as of snapshot(:b_scn)  
  where whe = 0  
  group by gby  
  ) deltas  
-on ( sys\_op\_map\_nonnull(test\_mv.mv\_gby) = sys\_op\_map\_nonnull(deltas.gby) )  
+on ( sys_op_map_nonnull(test_mv.mv_gby) = sys_op_map_nonnull(deltas.gby) )  
 when matched then  
  update set  
- test\_mv.mv\_cnt\_star = test\_mv.mv\_cnt\_star + deltas.cnt\_star,  
- test\_mv.mv\_cnt\_dat = test\_mv.mv\_cnt\_dat + deltas.cnt\_dat,  
- test\_mv.mv\_sum\_dat = decode( test\_mv.mv\_cnt\_dat + deltas.cnt\_dat,  
+ test_mv.mv_cnt_star = test_mv.mv_cnt_star + deltas.cnt_star,  
+ test_mv.mv_cnt_dat = test_mv.mv_cnt_dat + deltas.cnt_dat,  
+ test_mv.mv_sum_dat = decode( test_mv.mv_cnt_dat + deltas.cnt_dat,  
  0, null,  
- nvl(test\_mv.mv\_sum\_dat,0) + deltas.sum\_dat  
+ nvl(test_mv.mv_sum_dat,0) + deltas.sum_dat  
  ),  
- delete where ( test\_mv.mv\_cnt\_star = 0 )  
+ delete where ( test_mv.mv_cnt_star = 0 )  
 when not matched then  
- insert ( test\_mv.mv\_gby, test\_mv.mv\_cnt\_dat, test\_mv.mv\_sum\_dat, test\_mv.mv\_cnt\_star )  
- values ( deltas.gby, deltas.cnt\_dat, decode (deltas.cnt\_dat, 0, null, deltas.sum\_dat), deltas.cnt\_star)  
- where (deltas.cnt\_star \> 0)  
-[/sql]  
+ insert ( test_mv.mv_gby, test_mv.mv_cnt_dat, test_mv.mv_sum_dat, test_mv.mv_cnt_star )  
+ values ( deltas.gby, deltas.cnt_dat, decode (deltas.cnt_dat, 0, null, deltas.sum_dat), deltas.cnt_star)  
+ where (deltas.cnt_star > 0)  
+```
+
 Here the deltas are calculated by reversing the sign of "old" values (dml$$ not equal to 'I', which is the same as old\_new$$ not equal to 'N'; note in passing that it does not distinguish between old\_new$$ equal to 'O' or 'U', as stated in the introduction post), of course adjusting cnt\_star and cnt\_dat accordingly.
 
 The removal of rows that get their mv\_cnt\_star set to zero is performed as a side case of the update, which is very nice since it does not call for an index on that column.
 
 Surprisingly, this statement does not use TMPDLT, but reads straight from the log; I don't know the reason behind this, and whether this is always the case or if TMPDLT is sometimes used, depending, perhaps, on some heuristic decision. Surely, while using TMPDLT is mandatory in the other two cases (since the statements work only if their input is insert/delete only, and that is checked over TMPDLT only), it is just a possible optimization choice here.
 
-**optimizations**
+## Optimizations
 
 Knowing the "internal" workings presented here makes it vastly easier (I hope) to optimize the refresh process and avoid pitfalls; it is of course unfeasible to cover all possible real-life scenarios, but I can offer some general high-level considerations.
 

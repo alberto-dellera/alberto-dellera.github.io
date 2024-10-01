@@ -47,7 +47,7 @@ In the <a href="{{ site.baseurl }}/blog/2013/08/05/fast-refresh-of-aggregate-onl
 
 Let's illustrate, with the help of the usual supporting <a href="{{ site.baseurl }}/assets/files/2013/08/post_0280_gby_mv_max.zip">test case</a>, and building on the shoulders of the already illustrated <a href="{{ site.baseurl }}/blog/2013/08/19/fast-refresh-of-aggregate-only-materialized-views-with-sum-algorithm/">SUM case</a>.
 
-## refresh for insert-only TMPDLT
+## Refresh for insert-only TMPDLT
 
 The refresh is made using this single merge statement:
 
@@ -96,7 +96,7 @@ This algorithm is used also when the where clause is specified in the MV (adding
 
 It's also very interesting to remember that this algorithm can be used when only inserts(new values) are present *in TMPDLT*, not in the log, and hence it can be used *even when deletes or inserts are present in the log*, provided they are redundant (as seen in the general introduction post). This is especially useful for where-clause MVs, since it widens the possibility to refresh beyond insert-only, as already demonstrated in script tmpdlt_enables_fast_refresh_of_insert_only_mv.sql of the introduction post.
 
-## refresh for mixed-DML TMPDLT
+## Refresh for mixed-DML TMPDLT
 
 The refresh is accomplished using two statements, a delete that removes every gby value referenced in the log:
 
@@ -137,7 +137,7 @@ Note that this might result in massive degradation of performance - this algorit
 
 As in the SUM case, a bit surprisingly, this statement does not use TMPDLT, but reads straight from the log; the same observations made for the SUM case apply here as well.
 
-## optimizations
+## Optimizations
 
 The insert-only case is very similar to the SUM case, and thus please refer to the high-level discussion presented there if interested (but, obviously, the creation of the index on mv_cnt_star is not needed in the MAX case). As a side note, one might notice that insert-only algorithms for aggregation are a class of their own, vastly simpler and vastly more performant (and that does not come as a surprise).
 

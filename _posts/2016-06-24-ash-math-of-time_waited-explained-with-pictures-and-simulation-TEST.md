@@ -39,7 +39,7 @@ WAITING 2,720,383.092
 ON CPU    500,000.000
 ```
 
-All the code and spools are available <a href="{{ site.baseurl }}/assets/files/post_0310_ash_math.zip">here</a>.
+All the code and spools are available <a href="{{ site.baseurl }}/assets/files/2016/06/post_0310_ash_math.zip">here</a>.
 
 Image:
 

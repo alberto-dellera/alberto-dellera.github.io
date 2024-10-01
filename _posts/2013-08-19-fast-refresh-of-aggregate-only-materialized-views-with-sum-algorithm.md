@@ -44,7 +44,7 @@ with rowid ( whe, gby, dat ), sequence
 including new values;  
 ```
 
-In the [general introduction to aggregate-only MVs]({{ site.baseurl }}/blog/2013/08/05/fast-refresh-of-aggregate-only-materialized-views-introduction/) we have seen how the refresh engine first marks the log rows, then inspects TMPDLT (loading its rows into the result cache at the same time) to classify its content as insert-only (if it contains only new values), delete-only (if it contains only old values) or general (if it contains a mix of new/old values). Here we illustrate the refreshing SQL in all three scenarios, extracted from the supporting [test case]({{ site.baseurl }}/2013/08/post_0270_gby_mv_sum.zip).
+In the [general introduction to aggregate-only MVs]({{ site.baseurl }}/blog/2013/08/05/fast-refresh-of-aggregate-only-materialized-views-introduction/) we have seen how the refresh engine first marks the log rows, then inspects TMPDLT (loading its rows into the result cache at the same time) to classify its content as insert-only (if it contains only new values), delete-only (if it contains only old values) or general (if it contains a mix of new/old values). Here we illustrate the refreshing SQL in all three scenarios, extracted from the supporting [test case]({{ site.baseurl }}/assets/files/2013/08/post_0270_gby_mv_sum.zip).
 
 ## Refresh for insert-only TMPDLT
 
@@ -108,9 +108,9 @@ update /*+ bypass_ujvc */ (
                   sum( -1 ) as cnt_star  
                   sum( -1 * decode(dat, null, 0, 1) ) as cnt_dat,  
                   nvl( sum(-1 * dat), 0) as sum_dat  
-              from (select gby, whe, dat  
-                      from tmpdlt$_test_master mas$  
-                   ) as of snapshot(:b_scn)  
+             from (select gby, whe, dat  
+                     from tmpdlt$_test_master mas$  
+                  ) as of snapshot(:b_scn)  
             where whe = 0  
             group by gby  
          ) deltas  

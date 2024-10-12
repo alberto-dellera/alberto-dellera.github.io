@@ -14,7 +14,7 @@ meta:
 author: Alberto Dell'Era
 permalink: "/blog/2013/08/05/fast-refresh-of-aggregate-only-materialized-views-introduction/"
 migration_from_wordpress:
-  approved_on: 
+  approved_on: 20241012 BUT CHECK 2009 LINKS 
 ---
 This post introduces a series about the algorithm used by Oracle (in 11.2.0.3) to fast refresh a materialized view (MV) containing only an aggregate:
 
@@ -91,7 +91,7 @@ But if you ignore these differences, you can consider the log a sequence of dele
 
 When the MV fast refresh is started, the first step is to "mark" the logged modifications to be propagated to the MV by setting snaptime$$ equal to the current time - check the description contained [in this post]({{ site.baseurl }}/blog/2009/08/04/fast-refresh-of-join-only-materialized-views-algorithm-summary) for details (note also [another possible variant with "commit-scn mv logs"]({{ site.baseurl }}/blog/2009/11/03/11gr2-materialized-view-logs-changes). MV log purging (at the end of the refresh) is the same as well.
 
-# TMPDLT (deleting the redundant log values)
+# The "TMPDLT" CTE (deleting the redundant log values)
 
 The stream of old/new values marked in the log might contain **pairs** of  redundant values, each pair being composed of a new value (insert) immediately followed by an old value (delete) on the same row; every such pair can be ignored without affecting the refresh result. Filtering out these pairs is the job of this SQL fragment (nicknamed "TMPDLT"), heavily edited for readability:
 

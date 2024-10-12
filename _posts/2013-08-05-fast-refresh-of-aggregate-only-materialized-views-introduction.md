@@ -91,48 +91,54 @@ But if you ignore these differences, you can consider the log a sequence of dele
 
 When the MV fast refresh is started, the first step is to "mark" the logged modifications to be propagated to the MV by setting snaptime$$ equal to the current time - check the description contained [in this post]({{ site.baseurl }}/blog/2009/08/04/fast-refresh-of-join-only-materialized-views-algorithm-summary) for details (note also [another possible variant with "commit-scn mv logs"]({{ site.baseurl }}/blog/2009/11/03/11gr2-materialized-view-logs-changes). MV log purging (at the end of the refresh) is the same as well.
 
-<p><b>TMPDLT (deleting the redundant log values)</b></p>
-<p>The stream of old/new values marked in the log might contain <b>pairs</b> of  redundant values, each pair being composed of a new value (insert) immediately followed by an old value (delete) on the same row; every such pair can be ignored without affecting the refresh result. Filtering out these pairs is the job of this SQL fragment (nicknamed "TMPDLT"), heavily edited for readability:</p>
-<p>[sql light="true"]<br />
-with tmpdlt$_test_master as (<br />
-  select /*+ result_cache(lifetime=session) */<br />
-         rid$, gby, dat, whe,<br />
-         decode(old_new$$, 'N', 'I', 'D') dml$$,<br />
-         old_new$$,  snaptime$$,<br />
-         dmltype$$<br />
-   from (select log.*,<br />
-                min( sequence$$ ) over (partition by rid$) min_sequence$$,<br />
-                max( sequence$$ ) over (partition by rid$) max_sequence$$<br />
-           from (select chartorowid(m_row$$) rid$, gby, dat, whe,<br />
-                        dmltype$$, sequence$$, old_new$$, snaptime$$<br />
-                   from mlog$_test_master<br />
-                  where snaptime$$ &gt; :b_st0<br />
-                ) as of snapshot(:b_scn) log<br />
-        )<br />
-  where ( (old_new$$ in ('O', 'U') ) and (sequence$$ = min_sequence$$) )<br />
-     or ( (old_new$$ = 'N'         ) and (sequence$$ = max_sequence$$) )<br />
-)<br />
-[/sql]<br />
-The "log" in-line view is the usual one selecting the marked log rows; the outer query blocks, for each rowid, keeps only the first logged value *but only if it is old*, and the last logged one, *but only if it is new*.</p>
-<p>So for example (check tmpdlt_pair_removal_examples.sql), TMPDLT filters out the rows marked with (*) from this triple update of the same row:<br />
-[sql light="true"]<br />
-SEQUENCE$$ OLD_NEW$$    GBY    DAT    WHE<br />
----------- --------- ------ ------ ------<br />
-     10142 U              0      1      0<br />
-     10143 N              0   1000      0  *<br />
-     10144 U              0   1000      0  *<br />
-     10145 N              0   2000      0  *<br />
-     10146 U              0   2000      0  *<br />
-     10147 N              0   3000      0<br />
-[/sql]<br />
-and it removes completely this pair (obtained by inserting a row and then deleting it):<br />
-[sql light="true"]<br />
-SEQUENCE$$ OLD_NEW$$    GBY    DAT    WHE<br />
+# TMPDLT (deleting the redundant log values)
+
+The stream of old/new values marked in the log might contain **pairs** of  redundant values, each pair being composed of a new value (insert) immediately followed by an old value (delete) on the same row; every such pair can be ignored without affecting the refresh result. Filtering out these pairs is the job of this SQL fragment (nicknamed "TMPDLT"), heavily edited for readability:
+
+```plsql
+with tmpdlt$_test_master as (
+  select /*+ result_cache(lifetime=session) */
+         rid$, gby, dat, whe,
+         decode(old_new$$, 'N', 'I', 'D') dml$$,
+         old_new$$,  snaptime$$,
+         dmltype$$
+   from (select log.*,
+                min( sequence$$ ) over (partition by rid$) min_sequence$$,
+                max( sequence$$ ) over (partition by rid$) max_sequence$$
+           from (select chartorowid(m_row$$) rid$, gby, dat, whe,
+                        dmltype$$, sequence$$, old_new$$, snaptime$$
+                   from mlog$_test_master
+                  where snaptime$$ &gt; :b_st0
+                ) as of snapshot(:b_scn) log
+        )
+  where ( (old_new$$ in ('O', 'U') ) and (sequence$$ = min_sequence$$) )
+     or ( (old_new$$ = 'N'         ) and (sequence$$ = max_sequence$$) )
+)
+```
+
+
+The "log" in-line view is the usual one selecting the marked log rows; the outer query blocks, for each rowid, keeps only the first logged value *but only if it is old*, and the last logged one, *but only if it is new*.
+
+So for example (check tmpdlt_pair_removal_examples.sql), TMPDLT filters out the rows marked with (*) from this triple update of the same row:
+```
+SEQUENCE$$ OLD_NEW$$    GBY    DAT    WHE
 ---------- --------- ------ ------ ------
-  
+     10142 U              0      1      0
+     10143 N              0   1000      0  *
+     10144 U              0   1000      0  *
+     10145 N              0   2000      0  *
+     10146 U              0   2000      0  *
+     10147 N              0   3000      0
+```
+
+and it removes completely this pair (obtained by inserting a row and then deleting it):
+
+```
+SEQUENCE$$ OLD_NEW$$    GBY    DAT    WHE
+---------- --------- ------ ------ ------
  10162 N -1 -1 -1 \*  
  10163 O -1 -1 -1 \*  
-[/sql]
+```
 
 As we will see, the result of TMPDLT is (almost always) the actual input to the refreshing algorithm, instead of the "raw" log rows. Note that this prefiltering is relatively expensive, and while it might be somehow beneficial to remove some redundant values, it is useful especially when the log contains a mix of new and old values and TMPDLT is able to turn it into a stream of new-only(insert-only) or old-only(delete-only) one. When it happens, the more specialized versions of the algorithm can be used, thus saving resources - even if the savings could not repay the cost of TMPDLT, in general.
 

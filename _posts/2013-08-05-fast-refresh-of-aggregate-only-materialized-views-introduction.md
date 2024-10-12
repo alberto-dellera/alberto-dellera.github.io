@@ -11,37 +11,42 @@ categories:
 - materialized views
 tags: []
 meta:
-  _syntaxhighlighter_encoded: '1'
-  _sg_subscribe-to-comments: jerald.fowler.hc63@aol.com
-author:
-  login: alberto.dellera
-  email: alberto.dellera@gmail.com
-  display_name: Alberto Dell'Era
-  first_name: Alberto
-  last_name: Dell'Era
+author: Alberto Dell'Era
 permalink: "/blog/2013/08/05/fast-refresh-of-aggregate-only-materialized-views-introduction/"
+migration_from_wordpress:
+  approved_on: 
 ---
-<p>This post introduces a series about the algorithm used by Oracle (in 11.2.0.3) to fast refresh a materialized view (MV) containing only an aggregate:</p>
-<p>[sql light="true"]<br />
-create materialized view test_mv<br />
-build immediate<br />
-refresh fast on demand<br />
-with rowid<br />
-as<br />
-select gby        as mv_gby,<br />
-       count(*)   as mv_cnt_star,<br />
-       AGG  (dat) as mv_AGG_dat,<br />
-       count(dat) as mv_cnt_dat<br />
-  from test_master<br />
- where whe = 0<br />
- group by gby<br />
-;<br />
-[/sql]</p>
-<p>Where AGG is either SUM or MAX, the most important aggregates. </p>
-<p>In the next posts, I will illustrate the algorithms used to propagate conventional (not direct-load) inserts, updates and deletes on the master table; I will illustrate also the specialized versions of the algorithms used when only one type of DML has been performed (if they exist).</p>
-<p>In this post, we sets the stage, make some general observations, and illustrate the very first steps of the algorithm that are common to all scenarios. Everything is supported by the usual <a href="http://34.247.94.223/wp-content/uploads/2013/08/gby_mv_intro.zip">test case</a>.</p>
-<p><b>Materialized view logs configuration</b></p>
-<p>I have configured the materialized view log on the master table to "log everything", to give the most complete information possible to the MV refresh engine:</p>
+This post introduces a series about the algorithm used by Oracle (in 11.2.0.3) to fast refresh a materialized view (MV) containing only an aggregate:
+
+```plsql
+create materialized view test_mv
+build immediate
+refresh fast on demand
+with rowid
+as
+select gby        as mv_gby,
+       count(*)   as mv_cnt_star,
+       AGG  (dat) as mv_AGG_dat,
+       count(dat) as mv_cnt_dat
+  from test_master
+ where whe = 0
+ group by gby
+;
+```
+
+Where AGG is either SUM or MAX, the most important aggregates.
+
+In the next posts, I will illustrate the algorithms used to propagate conventional (not direct-load) inserts, updates and deletes on the master table; I will illustrate also the specialized versions of the algorithms used when only one type of DML has been performed (if they exist).
+
+In this post, we sets the stage, make some general observations, and illustrate the very first steps of the algorithm that are common to all scenarios. Everything is supported by the usual
+[test case]({{ site.baseurl }}/assets/files/2013/08/gby_mv_intro.zip).
+
+
+## Materialized view logs configuration
+
+
+I have configured the materialized view log on the master table to "log everything", to give the most complete information possible to the MV refresh engine:
+
 <p>[sql light="true"]<br />
 create materialized view log on test_master<br />
 with rowid ( whe, gby, dat ), sequence<br />

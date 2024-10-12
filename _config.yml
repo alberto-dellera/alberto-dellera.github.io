@@ -16,9 +16,15 @@
 title: "Alberto Dell'Era's blog"
 email: alberto.dellera@gmail.com
 description: >- # this means to ignore newlines until "baseurl:"
-  Write an awesome description for your new site here. You can edit this
-  line in _config.yml. It will appear in your document head meta (for
-  Google search results) and in your feed.xml site description.
+  I’ve spent all my professional life working within the Italian Telecommunications sector since 1996, 
+  specializing in the Oracle database full-time since 1999. I currently work for a big (2600+ employees) consultancy firm 
+  as an Oracle specialist, very often optimizing customers’ systems (“Performance Tuning”), and developing for the flagship 
+  customer Web portal of one of the largest Italian mobile operators. 
+  
+  I also hold a Math-oriented degree in Electronics Engineering from the “Politecnico di Milano” University.
+
+  I am honoured of being a member of OakTable Network, the famous organization of Oracle professionals distinguished by the use 
+  of the Scientific Method (and related ethics) for all their activities.
 baseurl: "" # the subpath of your site, e.g. /blog
 url: "" # the base hostname & protocol for your site, e.g. http://example.com
 twitter_username: jekyllrb

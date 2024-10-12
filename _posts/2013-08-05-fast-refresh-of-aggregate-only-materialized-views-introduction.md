@@ -136,8 +136,8 @@ and it removes completely this pair (obtained by inserting a row and then deleti
 ```
 SEQUENCE$$ OLD_NEW$$    GBY    DAT    WHE
 ---------- --------- ------ ------ ------
- 10162 N -1 -1 -1 \*  
- 10163 O -1 -1 -1 \*  
+     10162 N             -1     -1     -1  *  
+     10163 O             -1     -1     -1  *  
 ```
 
 As we will see, the result of TMPDLT is (almost always) the actual input to the refreshing algorithm, instead of the "raw" log rows. Note that this prefiltering is relatively expensive, and while it might be somehow beneficial to remove some redundant values, it is useful especially when the log contains a mix of new and old values and TMPDLT is able to turn it into a stream of new-only(insert-only) or old-only(delete-only) one. When it happens, the more specialized versions of the algorithm can be used, thus saving resources - even if the savings could not repay the cost of TMPDLT, in general.

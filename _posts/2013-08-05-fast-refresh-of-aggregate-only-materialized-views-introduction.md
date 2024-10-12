@@ -47,36 +47,44 @@ In this post, we sets the stage, make some general observations, and illustrate 
 
 I have configured the materialized view log on the master table to "log everything", to give the most complete information possible to the MV refresh engine:
 
-<p>[sql light="true"]<br />
-create materialized view log on test_master<br />
-with rowid ( whe, gby, dat ), sequence<br />
-including new values;<br />
-[/sql]</p>
-<p>With this configuration, each modification to the master table logs the rowid of the affected rows (in column m_row$$), and it is labeled with an increasing value (in sequence$$) that enables the MV refresh engine to reconstruct the order in which the modifications happened. In detail, let’s see what’s inside the logs after we modify a single row (from mvlog_examples.sql):</p>
-<p>After an INSERT:<br />
-[sql light="true"]<br />
-SEQUENCE$$ M_ROW$$              DMLTYPE$$ OLD_NEW$$    WHE    GBY    DAT<br />
----------- -------------------- --------- --------- ------ ------ ------<br />
-     10084 AAAWK0AAEAAAxTHAD6   I         N             10     10     10<br />
-[/sql]<br />
-This logs the <i>new values</i> (old_new$$=’N’) of an Insert (dmltype$$=’I’).</p>
-<p>After a DELETE:<br />
-[sql light="true"]<br />
-SEQUENCE$$ M_ROW$$              DMLTYPE$$ OLD_NEW$$    WHE    GBY    DAT<br />
----------- -------------------- --------- --------- ------ ------ ------<br />
-     10085 AAAWK0AAEAAAxTFAAA   D         O              0      0      1<br />
-[/sql]<br />
-This logs the <i>old values</i> (old_new$$=’O’) of a Delete (dmltype$$=’D’).</p>
-<p>After an UPDATE:<br />
-[sql light="true"]<br />
-SEQUENCE$$ M_ROW$$              DMLTYPE$$ OLD_NEW$$    WHE    GBY    DAT<br />
----------- -------------------- --------- --------- ------ ------ ------<br />
-     10086 AAAWK0AAEAAAxTHAD6   U         U             10     10     10<br />
-     10087 AAAWK0AAEAAAxTHAD6   U         N             10     10     99<br />
-[/sql]<br />
-This logs both the <i>old values</i> (old_new$$=’U’)  and the the <i>new values</i> (old_new$$=’N’)  of an Update (dmltype$$=’U’). So we see that the update changed DAT from 10 to 99, without changing the other columns.</p>
-<p>Note that the update log format is the same as a delete (at sequence 10086) immediately followed by an insert (at sequence 10087) at the same location on disk (AAAWK0AAEAAAxTHAD6), the only differences being dmltype$$=’U’ and old_new$$ set to ’U’ instead of ‘O’ for the old values.</p>
-<p>But if you ignore these differences, you can consider the log a sequence of deletes/inserts, or if you prefer, a stream of old/new values. And this is <i>exactly what the refresh engine does</i> - it does not care whether an old value is present because it logs a delete or the "erase side" of an update, and ditto for new values. It "sees" the log as a stream of old/new values, as we will demonstrate.  </p>
+```plsql
+create materialized view log on test_master
+with rowid ( whe, gby, dat ), sequence
+including new values;
+```
+
+With this configuration, each modification to the master table logs the rowid of the affected rows (in column m_row$$), and it is labeled with an increasing value (in sequence$$) that enables the MV refresh engine to reconstruct the order in which the modifications happened. In detail, let’s see what’s inside the logs after we modify a single row (from mvlog_examples.sql):
+
+# After an INSERT:
+```
+SEQUENCE$$ M_ROW$$              DMLTYPE$$ OLD_NEW$$    WHE    GBY    DA
+---------- -------------------- --------- --------- ------ ------ ------
+     10084 AAAWK0AAEAAAxTHAD6   I         N             10     10     10
+```
+
+This logs the *new values^ (old_new$$=’N’) of an Insert (dmltype$$=’I’).
+
+# After a DELETE:
+```
+SEQUENCE$$ M_ROW$$              DMLTYPE$$ OLD_NEW$$    WHE    GBY    DA
+---------- -------------------- --------- --------- ------ ------ ------
+     10085 AAAWK0AAEAAAxTFAAA   D         O              0      0      1
+```
+
+This logs the *old values* (old_new$$=’O’) of a Delete (dmltype$$=’D’).
+
+# After an UPDATE:
+```
+SEQUENCE$$ M_ROW$$              DMLTYPE$$ OLD_NEW$$    WHE    GBY    DA
+---------- -------------------- --------- --------- ------ ------ ------
+     10086 AAAWK0AAEAAAxTHAD6   U         U             10     10     10
+     10087 AAAWK0AAEAAAxTHAD6   U         N             10     10     99
+```
+
+This logs both the *old values* (old_new$$=’U’)  and the the *new values* (old_new$$=’N’)  of an Update (dmltype$$=’U’). So we see that the update changed DAT from 10 to 99, without changing the other columns.
+
+Note that the update log format is the same as a delete (at sequence 10086) immediately followed by an insert (at sequence 10087) at the same location on disk (AAAWK0AAEAAAxTHAD6), the only differences being dmltype$$=’U’ and old_new$$ set to ’U’ instead of ‘O’ for the old values.</p>
+<p>But if you ignore these differences, you can consider the log a sequence of deletes/inserts, or if you prefer, a stream of old/new values. And this is *exactly what the refresh engine does* - it does not care whether an old value is present because it logs a delete or the "erase side" of an update, and ditto for new values. It "sees" the log as a stream of old/new values, as we will demonstrate.  </p>
 <p><b>Log snapshots</b></p>
 <p>When the MV fast refresh is started, the first step is to "mark" the logged modifications to be propagated to the MV by setting snaptime$$ equal to the current time - check the description contained <a href="http://www.adellera.it/blog/2009/08/04/fast-refresh-of-join-only-materialized-views-algorithm-summary">in this post</a> for details (note also <a href="http://www.adellera.it/blog/2009/11/03/11gr2-materialized-view-logs-changes">another possible variant with "commit-scn mv logs"</a>). MV log purging (at the end of the refresh) is the same as well.</p>
 <p><b>TMPDLT (deleting the redundant log values)</b></p>
@@ -101,7 +109,7 @@ with tmpdlt$_test_master as (<br />
      or ( (old_new$$ = 'N'         ) and (sequence$$ = max_sequence$$) )<br />
 )<br />
 [/sql]<br />
-The "log" in-line view is the usual one selecting the marked log rows; the outer query blocks, for each rowid, keeps only the first logged value <i>but only if it is old</i>, and the last logged one, <i>but only if it is new</i>.</p>
+The "log" in-line view is the usual one selecting the marked log rows; the outer query blocks, for each rowid, keeps only the first logged value *but only if it is old*, and the last logged one, *but only if it is new*.</p>
 <p>So for example (check tmpdlt_pair_removal_examples.sql), TMPDLT filters out the rows marked with (*) from this triple update of the same row:<br />
 [sql light="true"]<br />
 SEQUENCE$$ OLD_NEW$$    GBY    DAT    WHE<br />

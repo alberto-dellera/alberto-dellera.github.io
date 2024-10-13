@@ -14,7 +14,7 @@ meta:
 author: Alberto Dell'Era
 permalink: "/blog/2013/04/22/fast-refresh-of-outer-join-only-materialized-views-algorithm-part-1/"
 migration_from_wordpress:
-  approved_on: working
+  approved_on: 20241013
 ---
 In this series of posts we will discuss how Oracle refreshes materialized views (MV) containing only OUTER joins, covering only 11.2.0.3. We will use the very same scenario (MV log configuration, DML type, etc) as in the [inner_join](/blog/2009/08/04/fast-refresh-of-join-only-materialized-views-algorithm-summary/) case, "just" turning the inner join into an outer join:
 

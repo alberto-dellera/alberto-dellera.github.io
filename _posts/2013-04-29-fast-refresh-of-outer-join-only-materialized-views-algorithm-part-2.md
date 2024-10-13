@@ -24,7 +24,7 @@ ooo inn1
 ooo inn2
 ```
 
-and hence, both the DEL and INS step must consider (and read) the whole outer slice even if only a subset of the inner rows have been modified. This requires both more resources and a considerably more complex algorithm. Let's illustrate it (the mandatory test case is [here]( http://34.247.94.223/wp-content/uploads/2013/04/join_mv_outer_part2.zip)).
+and hence, both the DEL and INS step must consider (and read) the whole outer slice even if only a subset of the inner rows have been modified. This requires both more resources and a considerably more complex algorithm. Let's illustrate it (the mandatory test case is [here](/assets/files/2013/04/join_mv_outer_part2.zip)).
 
 
 ## The DEL macro step

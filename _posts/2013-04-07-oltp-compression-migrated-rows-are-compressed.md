@@ -51,7 +51,7 @@ select rpad( 'A', 400, 'A') from dual connect by level <= 10000;
 
 That is, all identical rows, all chars set to 'A' (coded as 0x41 in the WE8ISO8859P1 single-byte charset of my test database). Note that each row is sized 400 bytes and hence, when not compressed, only 10 rows can fit in a 4K block, and only 5 rows would be inserted given the PCTFREE=50 setting.
 
-The block dump of the first block after the segment header shows that we have 2017 bytes free (tosp=0x7e1), as expected. In the row dump we find, in order, first the (lonely) token:</p>
+The block dump of the first block after the segment header shows that we have 2017 bytes free (tosp=0x7e1), as expected. In the row dump we find, in order, first the (lonely) token:
 ```
 tab 0, row 0, @0xdf3
 tl: 405 fb: --H-FL-- lb: 0x0  cc: 1
@@ -89,13 +89,13 @@ nrid:  0x04000148.0
 bindmp: 20 02 00 04 00 01 48 00 00
 ```
 
-The flag byte "--H-----" means "this is just the row header" (check [this great note by Steve Adams](http://www.ixora.com.au/q+a/0107/27152941.htm) and nrid is the "forwarding address" rowid we spoke about previously.
+The flag byte "--H-----" means "this is just the row header" (check [this great note by Steve Adams](http://www.ixora.com.au/q+a/0107/27152941.htm)) and nrid is the "forwarding address" rowid we spoke about previously.
 
 Now, the interesting part - <i>migrated rows got compressed</i>.
 
 Indeed, walking down the blocks containing the migrated rows, we see
-a)  token 0, holding  400 bytes set to 0x61 (same as above, not shown)
-b)  a certain number (usually a dozen) of compressed rows:
+a - token 0, holding  400 bytes set to 0x61 (same as above, not shown)
+b - a certain number (usually a dozen) of compressed rows:
 
 ```
 tab 1, row 0, @0xce0
@@ -107,7 +107,7 @@ bindmp: 0c 01 01 04 00 01 01 00 05 01 00
 
 note that the row is migrated: the flag byte "----FL--" means "this is the First and Last row piece, the Header is not here" and hrid is the pointer to the header (i.e. the original row position).  Of course, note that the row is compressed: the  bindmp shows the usual row header  triplet "0c 01 01", then the hrid "04 00 01 01 00 05" and then the usual  "01" meaning  "1 token follows"  plus "00", the pointer  to token zero.
 
- c)  uno or two uncompressed rows:</p>
+c - one or two uncompressed rows:
 ```
 tab 1, row 10, @0xae0
 tl: 413 fb: ----

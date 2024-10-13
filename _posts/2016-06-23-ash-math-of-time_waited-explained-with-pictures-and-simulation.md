@@ -21,7 +21,7 @@ As explained by John Beresniewicz, Graham Wood and Uri Shaft in their excellent 
 
 In this post I will quantitatively illustrate why sampling is so bad for time_waited, how the formula corrects it, and the sampling "distortion" of "reality" in general, by using an "ASH simulator" I have built and analyzing its data using basic statistic tools (and graphs). I hope that this might help others (as it has definitely helped myself) to better understand the formula and especially the characteristics of this fantastic tool of Oracle named ASH - the one that I use the most nowadays when tuning and troubleshooting, mined by almost every script of my toolbox.
 
-All the code and spools are available <a href="{{ site.baseurl }}/assets/files/2016/06/post_0310_ash_math.zip">here</a>.
+All the code and spools are available <a href="/assets/files/2016/06/post_0310_ash_math.zip">here</a>.
 
 
 ## The simulator
@@ -76,13 +76,13 @@ Notice also that one "short" event has been missed by the reaping sampling hand.
 
 Let's produce an event stream that follows an uniform distribution on the interval [0 .. 2 sec]; here is its histogram (produced by the wonderful geom_histogram() of R's ggplot2 package):
 
-<a href="{{ site.baseurl }}/assets/images/2016/06/events.png"><img class="aligncenter size-full wp-image-825" title="ashevents" src="{{ site.baseurl }}/assets/images/2016/06/events.png" alt="histogram of event stream" width="480" height="480" /></a>
+<a href="/assets/images/2016/06/events.png"><img class="aligncenter size-full wp-image-825" title="ashevents" src="/assets/images/2016/06/events.png" alt="histogram of event stream" width="480" height="480" /></a>
 
 So we can visually appreciate and confirm that all events are contained in the requested interval and respect the desired distribution; please also note that the average (the thin dashed vertical line) is almost perfectly equal to the expected value E[ events ] = 1.0.
 
 Let's sample the stream, ignore the artificial zeros, and superimpose the samples' histogram to the previous one:
 
-<a href="{{ site.baseurl }}/assets/images/2016/06/combined.png"><img class="aligncenter size-full wp-image-828" title="ashcombined" src="{{ site.baseurl }}/assets/images/2016/06/combined.png" alt="histogram of events and samples combined" width="480" height="480" /></a>
+<a href="/assets/images/2016/06/combined.png"><img class="aligncenter size-full wp-image-828" title="ashcombined" src="/assets/images/2016/06/combined.png" alt="histogram of events and samples combined" width="480" height="480" /></a>
 
 
 So we can see that events longer then the sampling interval T (1sec) are always sampled and hence faithfully represented (the histograms bars match perfectly), but shorter events are not. For example, note that for time_waited = 0.5sec only half of the events are represented - in other words, the probability of being sampled is linearly proportional with time_waited.

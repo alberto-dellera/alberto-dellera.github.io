@@ -43,9 +43,9 @@ with rowid ( whe, gby, dat ), sequence
 including new values;
 ```
 
-In the <a href="{{ site.baseurl }}/blog/2013/08/05/fast-refresh-of-aggregate-only-materialized-views-introduction/">general introduction to aggregate-only MVs</a> we have seen how the refresh engine first marks the log rows, then inspects TMPDLT (loading its rows into the result cache at the same time) to classify its content as insert-only (if it contains only new values), delete-only (if it contains only old values) or general (if it contains a mix of new/old values). In the MAX scenario, a specialized (and much more performant) algorithm exists only for the insert-only case, and every other case falls back to the general algorithm. 
+In the <a href="/blog/2013/08/05/fast-refresh-of-aggregate-only-materialized-views-introduction/">general introduction to aggregate-only MVs</a> we have seen how the refresh engine first marks the log rows, then inspects TMPDLT (loading its rows into the result cache at the same time) to classify its content as insert-only (if it contains only new values), delete-only (if it contains only old values) or general (if it contains a mix of new/old values). In the MAX scenario, a specialized (and much more performant) algorithm exists only for the insert-only case, and every other case falls back to the general algorithm. 
 
-Let's illustrate, with the help of the usual supporting <a href="{{ site.baseurl }}/assets/files/2013/08/post_0280_gby_mv_max.zip">test case</a>, and building on the shoulders of the already illustrated <a href="{{ site.baseurl }}/blog/2013/08/19/fast-refresh-of-aggregate-only-materialized-views-with-sum-algorithm/">SUM case</a>.
+Let's illustrate, with the help of the usual supporting <a href="/assets/files/2013/08/post_0280_gby_mv_max.zip">test case</a>, and building on the shoulders of the already illustrated <a href="/blog/2013/08/19/fast-refresh-of-aggregate-only-materialized-views-with-sum-algorithm/">SUM case</a>.
 
 ## Refresh for insert-only TMPDLT
 

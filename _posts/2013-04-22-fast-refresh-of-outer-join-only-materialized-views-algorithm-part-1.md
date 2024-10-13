@@ -24,8 +24,8 @@ build immediate
 refresh fast on demand  
 as  
 select test_outer.*, test_outer.rowid as test_outer_rowid,  
- test_inner.*, test_inner.rowid as test_inner_rowid  
- from test_outer, test_inner  
+       test_inner.*, test_inner.rowid as test_inner_rowid  
+  from test_outer, test_inner  
  where test_outer.jouter = test_inner.jinner(+)  
 ;  
 ```
@@ -48,7 +48,7 @@ ooo inn2
 Now, if a unique constraint exists on the joined column(s), M can be at most 1, and hence only two possible states are possible for our outer slice:
 
 (a) ooo inn1  
-(b) ooo \*null\*
+(b) ooo *null*
 
 Hence, if inn1 is marked in the log, propagating its deletion in the DEL step is just a matter of simply switching the slice from state (a) to (b) using an update statement, and conversely, propagating its insertion in the INS step is just a matter of updating the slice from state (b) to state (a). In other words, the possible matching rows of the outer table are already there, in the MV, and all we need to do is to "flip their state" if necessary. Thus it is possible to propagate using only quite efficient update statements - no delete or insert needs to be performed at all.
 
@@ -74,12 +74,12 @@ In other words, _the whole "outer slice" must be considered and examined by both
 To reduce the visual clutter, instead of this log reading fragment (whose meaning we already discussed in the previous post)  
 ```plsql 
 (select rid$  
- from (select chartorowid(mas$.m_row$$) rid$  
- from mlog$_test_inner mas$  
- where mas$.snaptime$$ > :b_st0  
+   from (select chartorowid(mas$.m_row$$) rid$  
+   from mlog$_test_inner mas$  
+  where mas$.snaptime$$ > :b_st0  
  )  
 ) as of snapshot(:b_scn) mas$  
-```plsql
+```
 
 I will use the following simplified notation  
 ```plsql  
@@ -98,7 +98,7 @@ As stated above , it consists of a simple update:
 ```plsql  
 /* MV_REFRESH (UPD) */  
 update test_mv  
- set jinner = null, xinner = null, pkinner = null, test_inner_rowid = null  
+   set jinner = null, xinner = null, pkinner = null, test_inner_rowid = null  
  where test_inner_rowid in (select rid$ from mlog$_test\_inner)  
 ```
 
@@ -112,22 +112,22 @@ Again, as stated above, this step consists of a (not so simple) update:
 /* MV_REFRESH (UPD) */  
 update /*+ bypass_ujvc */ (  
 select test_mv.jinner target_0, jv.jinner source_0,  
- test_mv.xinner target_1, jv.xinner source_1,  
- test_mv.pkinner target_2, jv.pkinner source_2,  
- test_mv.test_inner_rowid target_3, jv.rid$ source_3  
- from ( select test_inner.rowid rid$, test_inner.*  
- from test_inner  
- where rowid in (select rid$ from mlog$_test_inner)  
- ) jv,  
- test_outer,  
- test_mv  
+       test_mv.xinner target_1, jv.xinner source_1,  
+       test_mv.pkinner target_2, jv.pkinner source_2,  
+       test_mv.test_inner_rowid target_3, jv.rid$ source_3  
+  from ( select test_inner.rowid rid$, test_inner.*  
+           from test_inner  
+          where rowid in (select rid$ from mlog$_test_inner)  
+       ) jv,  
+      test_outer,  
+      test_mv  
 where test_outer.jouter = jv.jinner  
- and test_mv.test_outer_rowid = test_outer.rowid  
+  and test_mv.test_outer_rowid = test_outer.rowid  
 )  
 set target_0 = source_0,  
- target_1 = source_1,  
- target_2 = source_2,  
- target_3 = source_3  
+    target_1 = source_1,  
+    target_2 = source_2,  
+    target_3 = source_3  
 ```
 
 this statement joins the marked rows of the inner table with the outer table (using an inner join, not an outer join, of course) and then looks for matching slices (by test\_outer\_rowid) in the MV; for every match, it flips the columns coming from the inner table from null to their actual values.

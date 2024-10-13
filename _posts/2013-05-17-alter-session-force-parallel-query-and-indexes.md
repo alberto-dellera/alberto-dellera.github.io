@@ -55,7 +55,11 @@ Hence there's no reason to be afraid, for example, that a nice Index Range Scan 
 
 **"force parallel query" and hinting: test case**
 
-Let's show that altering the session is equivalent to hinting. I will illustrate the simplest case only - a single-table statement that can be resolved either by a full table scan or an index fast full scan (check script force_parallel_main.sql in the <a href="http://34.247.94.223/wp-content/uploads/2013/05/force_parallel_query.zip">test case</a>), but in the test case zip two other scenarios (a join and a subquery) are tested as well. Note: I have only checked 9.2.0.8 and 11.2.0.3 (but I would be surprised if the test case could not reproduce in 10g as well).</p>
+Let's show that altering the session is equivalent to hinting. I will illustrate the simplest case only - a single-table statement that can be resolved either by a full table scan or an index fast full scan (check script force_parallel_main.sql in the [test case](/assets/files/2013/05/force_parallel_query.zip) 
+
+old old old
+
+<a href="http://34.247.94.223/wp-content/uploads/2013/05/force_parallel_query.zip">test case</a>), but in the test case zip two other scenarios (a join and a subquery) are tested as well. Note: I have only checked 9.2.0.8 and 11.2.0.3 (but I would be surprised if the test case could not reproduce in 10g as well).</p>
 <p>Table "t" has an index t_idx on column x, and hence the statement<br />
 [sql light="true"]<br />
 select sum(x) from t;<br />

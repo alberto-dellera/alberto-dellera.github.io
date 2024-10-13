@@ -14,7 +14,7 @@ meta:
 author: Alberto Dell'Era
 permalink: "/blog/2013/04/29/fast-refresh-of-outer-join-only-materialized-views-algorithm-part-2/"
 migration_from_wordpress:
-  approved_on: working
+  approved_on: 20241013
 ---
 In this post, we are going to complete [part 1](/blog/2013/04/22/fast-refresh-of-outer-join-only-materialized-views-algorithm-part-1/) illustrating the (considerably more complex) general case of a fast refresh from a master inner table without a unique constraint on the joined column(s).
 

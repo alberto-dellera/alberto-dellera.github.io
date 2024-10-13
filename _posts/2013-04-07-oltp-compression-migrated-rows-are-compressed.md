@@ -94,7 +94,9 @@ The flag byte "--H-----" means "this is just the row header" (check [this great 
 Now, the interesting part - <i>migrated rows got compressed</i>.
 
 Indeed, walking down the blocks containing the migrated rows, we see
+
 **(a)** - token 0, holding  400 bytes set to 0x61 (same as above, not shown)
+
 **(b)** - a certain number (usually a dozen) of compressed rows:
 
 ```

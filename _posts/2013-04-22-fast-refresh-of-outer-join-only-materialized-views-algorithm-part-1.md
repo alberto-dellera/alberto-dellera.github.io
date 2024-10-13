@@ -62,7 +62,7 @@ ooo inn2
 if only one of (inn1, inn2) is marked in the log, the DEL step can simply delete only the corresponding row in the MV, but if both are marked, it must leave a single row with all the columns coming from the inner table set to null:
 
 ```
-ooo \*null\*
+ooo *null*
 ```
 
 conversely, the INS step must remember to remove the above row if it finds at least a match in the outer table.
@@ -75,15 +75,15 @@ To reduce the visual clutter, instead of this log reading fragment (whose meanin
 ```plsql 
 (select rid$  
    from (select chartorowid(mas$.m_row$$) rid$  
-   from mlog$_test_inner mas$  
-  where mas$.snaptime$$ > :b_st0  
- )  
+           from mlog$_test_inner mas$  
+          where mas$.snaptime$$ > :b_st0  
+        )  
 ) as of snapshot(:b_scn) mas$  
 ```
 
 I will use the following simplified notation  
 ```plsql  
-(select rid$ from mlog$\_test\_inner)  
+(select rid$ from mlog$_test_inner)  
 ```
 
 And of course, I will restructure and simplify the SQL statements to increase readability (the original statements are included in the [test case](/assets/files/2013/04/join_mv_outer_part1_unique.zip) of course).
@@ -99,7 +99,7 @@ As stated above , it consists of a simple update:
 /* MV_REFRESH (UPD) */  
 update test_mv  
    set jinner = null, xinner = null, pkinner = null, test_inner_rowid = null  
- where test_inner_rowid in (select rid$ from mlog$_test\_inner)  
+ where test_inner_rowid in (select rid$ from mlog$_test_inner)  
 ```
 
 that simply flips to null the columns coming from the inner table of all marked rows of the MV.

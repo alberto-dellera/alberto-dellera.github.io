@@ -14,7 +14,7 @@ meta:
 author: Alberto Dell'Era
 permalink: "/blog/2013/05/17/alter-session-force-parallel-query-and-indexes/"
 migration_from_wordpress:
-  approved_on: working...
+  approved_on: 20241013
 ---
 This post is a brief discussion about the advantages of activating parallelism by altering the session environment instead of using the alternative ways (hints, DDL). The latter ways are the most popular in my experience, but I have noticed that their popularity is actually due, quite frequently, more to imperfect understanding rather than informed decision - and that's a pity since "alter session force parallel query" can really save everyone a lot of tedious work and improve maintainability a great deal.
 

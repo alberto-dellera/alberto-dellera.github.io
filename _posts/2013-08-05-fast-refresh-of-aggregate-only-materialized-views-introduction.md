@@ -39,7 +39,7 @@ Where AGG is either SUM or MAX, the most important aggregates.
 In the next posts, I will illustrate the algorithms used to propagate conventional (not direct-load) inserts, updates and deletes on the master table; I will illustrate also the specialized versions of the algorithms used when only one type of DML has been performed (if they exist).
 
 In this post, we sets the stage, make some general observations, and illustrate the very first steps of the algorithm that are common to all scenarios. Everything is supported by the usual
-[test case]({{ site.baseurl }}/assets/files/2013/08/gby_mv_intro.zip).
+[test case](/assets/files/2013/08/gby_mv_intro.zip).
 
 
 ## Materialized view logs configuration
@@ -89,7 +89,7 @@ But if you ignore these differences, you can consider the log a sequence of dele
 
 ## Log snapshots
 
-When the MV fast refresh is started, the first step is to "mark" the logged modifications to be propagated to the MV by setting snaptime$$ equal to the current time - check the description contained [in this post]({{ site.baseurl }}/blog/2009/08/04/fast-refresh-of-join-only-materialized-views-algorithm-summary) for details (note also [another possible variant with "commit-scn mv logs"]({{ site.baseurl }}/blog/2009/11/03/11gr2-materialized-view-logs-changes). MV log purging (at the end of the refresh) is the same as well.
+When the MV fast refresh is started, the first step is to "mark" the logged modifications to be propagated to the MV by setting snaptime$$ equal to the current time - check the description contained [in this post](/blog/2009/08/04/fast-refresh-of-join-only-materialized-views-algorithm-summary) for details (note also [another possible variant with "commit-scn mv logs"](/blog/2009/11/03/11gr2-materialized-view-logs-changes). MV log purging (at the end of the refresh) is the same as well.
 
 # The "TMPDLT" CTE (deleting the redundant log values)
 

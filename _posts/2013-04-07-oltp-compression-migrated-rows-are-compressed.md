@@ -94,8 +94,8 @@ The flag byte "--H-----" means "this is just the row header" (check [this great 
 Now, the interesting part - <i>migrated rows got compressed</i>.
 
 Indeed, walking down the blocks containing the migrated rows, we see
-a - token 0, holding  400 bytes set to 0x61 (same as above, not shown)
-b - a certain number (usually a dozen) of compressed rows:
+**(a)** - token 0, holding  400 bytes set to 0x61 (same as above, not shown)
+**(b)** - a certain number (usually a dozen) of compressed rows:
 
 ```
 tab 1, row 0, @0xce0
@@ -107,7 +107,8 @@ bindmp: 0c 01 01 04 00 01 01 00 05 01 00
 
 note that the row is migrated: the flag byte "----FL--" means "this is the First and Last row piece, the Header is not here" and hrid is the pointer to the header (i.e. the original row position).  Of course, note that the row is compressed: the  bindmp shows the usual row header  triplet "0c 01 01", then the hrid "04 00 01 01 00 05" and then the usual  "01" meaning  "1 token follows"  plus "00", the pointer  to token zero.
 
-c - one or two uncompressed rows:
+**(c)** - one or two uncompressed rows:
+
 ```
 tab 1, row 10, @0xae0
 tl: 413 fb: ----

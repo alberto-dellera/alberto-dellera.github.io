@@ -176,7 +176,7 @@ And of course we need the usual index on test_inner(jinner) to optimize the prop
 Note that the two indexes test_mv(test_inner_rowid, test_outer_rowid) and test_mv(test_outer_rowid , test_inner_rowid) allow to skip visiting the MV altogether (except for deleting rows, obviously) and hence might reduce the number of consistent gets dramatically (the indexes are both "covering" indexes for the SQL statements we observed in the DEL.del and INS.del) . 
 
 For example, in my test case (check ojoin_mv_test_case_indexed.sql), the plan for the DEL.del step is:
-```plsql
+```
 --------------------------------------------------------------
 | 0|DELETE STATEMENT                |                        |
 | 1| DELETE                         |TEST_MV                 |
@@ -206,7 +206,7 @@ Note the absence of any access to the MV to identify the rows to be deleted (row
 
 Ditto for the INS.del step:
 
-```plsql
+```
 -------------------------------------------------------------------
 | 0|DELETE STATEMENT                     |                        |
 | 1| DELETE                              |TEST_MV                 |

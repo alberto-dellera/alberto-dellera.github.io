@@ -59,96 +59,111 @@ Let's show that altering the session is equivalent to hinting. I will illustrate
 
 Table "t" has an index t_idx on column x, and hence the statement
 
-[sql light="true"]<br />
-select sum(x) from t;<br />
-[/sql]<br />
-can be calculated by either scanning the table or the index. In serial, the CBO chooses to scan the smaller index (costs are from 11.2.0.3):<br />
-[sql light="true"]<br />
-select /* serial */ sum(x) from t;<br />
---------------------------------------<br />
-|Id|Operation             |Name |Cost|<br />
---------------------------------------<br />
-| 0|SELECT STATEMENT      |     | 502|<br />
-| 1| SORT AGGREGATE       |     |    |<br />
-| 2|  INDEX FAST FULL SCAN|T_IDX| 502|<br />
---------------------------------------<br />
- [/sql]<br />
-If we now activate parallelism for the table, but not for the index, the CBO chooses to scan the table:<br />
-[sql light="true"]<br />
-select /*+ parallel(t,20) */ sum(x) from t<br />
-------------------------------------------<br />
-|Id|Operation              |Name    |Cost|<br />
-------------------------------------------<br />
-| 0|SELECT STATEMENT       |        | 229|<br />
-| 1| SORT AGGREGATE        |        |    |<br />
-| 2|  PX COORDINATOR       |        |    |<br />
-| 3|   PX SEND QC (RANDOM) |:TQ10000|    |<br />
-| 4|    SORT AGGREGATE     |        |    |<br />
-| 5|     PX BLOCK ITERATOR |        | 229|<br />
-| 6|      TABLE ACCESS FULL|T       | 229|<br />
-------------------------------------------<br />
-[/sql]<br />
-since the cost for the parallel table access is now down from the serial cost of 4135 (check the test case logs) to the parallel cost 4135 / (0.9 * 20) = 229, thus less than the cost (502) of the serial index access.</p>
-<p>Hinting the index as well makes the CBO apply the same scaling factor (0.9*20) to the index as well, and hence we are back to index access:<br />
-[sql light="true"]<br />
-select /*+ parallel_index(t, t_idx, 20) parallel(t,20) */ sum(x) from t<br />
----------------------------------------------<br />
-|Id|Operation                 |Name    |Cost|<br />
----------------------------------------------<br />
-| 0|SELECT STATEMENT          |        |  28|<br />
-| 1| SORT AGGREGATE           |        |    |<br />
-| 2|  PX COORDINATOR          |        |    |<br />
-| 3|   PX SEND QC (RANDOM)    |:TQ10000|    |<br />
-| 4|    SORT AGGREGATE        |        |    |<br />
-| 5|     PX BLOCK ITERATOR    |        |  28|<br />
-| 6|      INDEX FAST FULL SCAN|T_IDX   |  28|<br />
----------------------------------------------<br />
-[/sql]<br />
-Note that the cost computation is 28 = 502 / (0.9 * 20), less than the previous one (229).</p>
-<p>"Forcing" parallel query:</p>
-<p>[sql light="true"]<br />
-alter session force parallel query parallel 20;</p>
-<p>select /* force parallel query  */ sum(x) as from t<br />
----------------------------------------------<br />
-|Id|Operation                 |Name    |Cost|<br />
----------------------------------------------<br />
-| 0|SELECT STATEMENT          |        |  28|<br />
-| 1| SORT AGGREGATE           |        |    |<br />
-| 2|  PX COORDINATOR          |        |    |<br />
-| 3|   PX SEND QC (RANDOM)    |:TQ10000|    |<br />
-| 4|    SORT AGGREGATE        |        |    |<br />
-| 5|     PX BLOCK ITERATOR    |        |  28|<br />
-| 6|      INDEX FAST FULL SCAN|T_IDX   |  28|<br />
----------------------------------------------<br />
-[/sql]<br />
-Note that the plan is the same (including costs), as predicted.</p>
-<p>Side note: let's verify, just for fun, that the statement can run serially even if the session is "forced" as parallel (note that I have changed the statement since the original always benefits from parallelism):</p>
-<p>[sql light="true"]<br />
-alter session force parallel query parallel 20;</p>
-<p>select /* force parallel query (with no parallel execution) */ sum(x) from t<br />
-WHERE X &lt; 0<br />
-----------------------------------<br />
-|Id|Operation         |Name |Cost|<br />
-----------------------------------<br />
-| 0|SELECT STATEMENT  |     |   3|<br />
-| 1| SORT AGGREGATE   |     |    |<br />
-| 2|  INDEX RANGE SCAN|T_IDX|   3|<br />
-----------------------------------<br />
-[/sql]</p>
-<p>Side note 2: activation of parallelism for all referenced objects  can be obtained, in 11.2.0.3, using the new statement-level parallel hint (check <a href="http://oracle-randolf.blogspot.it/2011/03/things-worth-to-mention-and-remember-ii.html">this note by Randolf Geist</a> for details):<br />
-[sql light="true"]<br />
-select /*+ parallel(20) */ sum(x) from t<br />
----------------------------------------------------<br />
-|Id|Operation                 |Name    |Table|Cost|<br />
----------------------------------------------------<br />
-| 0|SELECT STATEMENT          |        |     |  28|<br />
-| 1| SORT AGGREGATE           |        |     |    |<br />
-| 2|  PX COORDINATOR          |        |     |    |<br />
-| 3|   PX SEND QC (RANDOM)    |:TQ10000|     |    |<br />
-| 4|    SORT AGGREGATE        |        |     |    |<br />
-| 5|     PX BLOCK ITERATOR    |        |     |  28|<br />
-| 6|      INDEX FAST FULL SCAN|T_IDX   |T    |  28|<br />
+```plsql
+select sum(x) from t;
+```
+
+can be calculated by either scanning the table or the index. In serial, the CBO chooses to scan the smaller index (costs are from 11.2.0.3):
+
+```plsql
+select /* serial */ sum(x) from t;
+--------------------------------------
+|Id|Operation             |Name |Cost|
+--------------------------------------
+| 0|SELECT STATEMENT      |     | 502|
+| 1| SORT AGGREGATE       |     |    |
+| 2|  INDEX FAST FULL SCAN|T_IDX| 502|
+--------------------------------------
+```
+
+If we now activate parallelism for the table, but not for the index, the CBO chooses to scan the table:
+
+```plsql
+select /*+ parallel(t,20) */ sum(x) from t
+------------------------------------------
+|Id|Operation              |Name    |Cost|
+------------------------------------------
+| 0|SELECT STATEMENT       |        | 229|
+| 1| SORT AGGREGATE        |        |    |
+| 2|  PX COORDINATOR       |        |    |
+| 3|   PX SEND QC (RANDOM) |:TQ10000|    |
+| 4|    SORT AGGREGATE     |        |    |
+| 5|     PX BLOCK ITERATOR |        | 229|
+| 6|      TABLE ACCESS FULL|T       | 229|
+------------------------------------------
+```
+
+since the cost for the parallel table access is now down from the serial cost of 4135 (check the test case logs) to the parallel cost 4135 / (0.9 * 20) = 229, thus less than the cost (502) of the serial index access.
+
+Hinting the index as well makes the CBO apply the same scaling factor (0.9*20) to the index as well, and hence we are back to index access:
+
+```plsql
+select /*+ parallel_index(t, t_idx, 20) parallel(t,20) */ sum(x) from t
+---------------------------------------------
+|Id|Operation                 |Name    |Cost|
+---------------------------------------------
+| 0|SELECT STATEMENT          |        |  28|
+| 1| SORT AGGREGATE           |        |    |
+| 2|  PX COORDINATOR          |        |    |
+| 3|   PX SEND QC (RANDOM)    |:TQ10000|    |
+| 4|    SORT AGGREGATE        |        |    |
+| 5|     PX BLOCK ITERATOR    |        |  28|
+| 6|      INDEX FAST FULL SCAN|T_IDX   |  28|
+---------------------------------------------
+```
+
+Note that the cost computation is 28 = 502 / (0.9 * 20), less than the previous one (229).
+
+"Forcing" parallel query:
+
+```plsql
+alter session force parallel query parallel 20;
+select /* force parallel query  */ sum(x) as from t
+---------------------------------------------
+|Id|Operation                 |Name    |Cost|
+---------------------------------------------
+| 0|SELECT STATEMENT          |        |  28|
+| 1| SORT AGGREGATE           |        |    |
+| 2|  PX COORDINATOR          |        |    |
+| 3|   PX SEND QC (RANDOM)    |:TQ10000|    |
+| 4|    SORT AGGREGATE        |        |    |
+| 5|     PX BLOCK ITERATOR    |        |  28|
+| 6|      INDEX FAST FULL SCAN|T_IDX   |  28|
+---------------------------------------------
+```
+
+Note that the plan is the same (including costs), as predicted.
+
+Side note: let's verify, just for fun, that the statement can run serially even if the session is "forced" as parallel (note that I have changed the statement since the original always benefits from parallelism):
+
+```plsql
+alter session force parallel query parallel 20;
+select /* force parallel query (with no parallel execution) */ sum(x) from t
+WHERE X &lt; 0
+----------------------------------
+|Id|Operation         |Name |Cost|
+----------------------------------
+| 0|SELECT STATEMENT  |     |   3|
+| 1| SORT AGGREGATE   |     |    |
+| 2|  INDEX RANGE SCAN|T_IDX|   3|
+----------------------------------
+```
+
+Side note 2: activation of parallelism for all referenced objects  can be obtained, in 11.2.0.3, using the new statement-level parallel hint (check [this note by Randolf Geist](http://oracle-randolf.blogspot.it/2011/03/things-worth-to-mention-and-remember-ii.html) for details):
+
+```plsql
+select /*+ parallel(20) */ sum(x) from t
 ---------------------------------------------------
+|Id|Operation                 |Name    |Table|Cost|
+---------------------------------------------------
+| 0|SELECT STATEMENT          |        |     |  28|
+| 1| SORT AGGREGATE           |        |     |    |
+| 2|  PX COORDINATOR          |        |     |    |
+| 3|   PX SEND QC (RANDOM)    |:TQ10000|     |    |
+| 4|    SORT AGGREGATE        |        |     |    |
+| 5|     PX BLOCK ITERATOR    |        |     |  28|
+| 6|      INDEX FAST FULL SCAN|T_IDX   |T    |  28|
+---------------------------------------------------
+```
   
-[/sql]  
 This greatly simplifies hinting, but of course you must still edit the statement if you need to change the parallel degree.

@@ -14,7 +14,7 @@ meta:
 author: Alberto Dell'Era
 permalink: "/blog/2013/04/07/oltp-compression-migrated-rows-are-compressed/"
 migration_from_wordpress:
-  approved_on: working
+  approved_on: 20241013
 ---
 In his articles [Compression in Oracle – Part 2: Read-Only Data](http://allthingsoracle.com/compression-in-oracle-part-2-read-only-data/) and [Compression in Oracle – Part 3: OLTP Compression](http://allthingsoracle.com/compression-in-oracle-part-3-oltp-compression/), [Jonathan Lewis](http://jonathanlewis.wordpress.com/all-postings/) has shown that block (re)compression is never attempted on updates - it is attempted only on inserts (and, of course, only if the used space crosses the PCTFREE threshold).
 

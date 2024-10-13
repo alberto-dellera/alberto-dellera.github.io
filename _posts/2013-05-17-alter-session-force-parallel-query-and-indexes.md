@@ -67,6 +67,8 @@ can be calculated by either scanning the table or the index. In serial, the CBO 
 
 ```plsql
 select /* serial */ sum(x) from t;
+```
+```
 --------------------------------------
 |Id|Operation             |Name |Cost|
 --------------------------------------
@@ -80,6 +82,8 @@ If we now activate parallelism for the table, but not for the index, the CBO cho
 
 ```plsql
 select /*+ parallel(t,20) */ sum(x) from t
+```
+```
 ------------------------------------------
 |Id|Operation              |Name    |Cost|
 ------------------------------------------
@@ -99,6 +103,8 @@ Hinting the index as well makes the CBO apply the same scaling factor (0.9*20) t
 
 ```plsql
 select /*+ parallel_index(t, t_idx, 20) parallel(t,20) */ sum(x) from t
+```
+```
 ---------------------------------------------
 |Id|Operation                 |Name    |Cost|
 ---------------------------------------------
@@ -119,6 +125,8 @@ Note that the cost computation is 28 = 502 / (0.9 * 20), less than the previous 
 ```plsql
 alter session force parallel query parallel 20;
 select /* force parallel query  */ sum(x) as from t
+```
+```
 ---------------------------------------------
 |Id|Operation                 |Name    |Cost|
 ---------------------------------------------
@@ -139,7 +147,9 @@ Side note: let's verify, just for fun, that the statement can run serially even 
 ```plsql
 alter session force parallel query parallel 20;
 select /* force parallel query (with no parallel execution) */ sum(x) from t
-WHERE X &lt; 0
+WHERE X < 0
+```
+```
 ----------------------------------
 |Id|Operation         |Name |Cost|
 ----------------------------------
@@ -153,6 +163,8 @@ Side note 2: activation of parallelism for all referenced objects  can be obtain
 
 ```plsql
 select /*+ parallel(20) */ sum(x) from t
+```
+```
 ---------------------------------------------------
 |Id|Operation                 |Name    |Table|Cost|
 ---------------------------------------------------

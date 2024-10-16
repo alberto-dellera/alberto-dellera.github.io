@@ -14,7 +14,7 @@ meta:
 author: Alberto Dell'Era
 permalink: "/blog/2012/10/01/overlapping-ranges-with-priority/"
 migration_from_wordpress:
-  approved_on: working
+  approved_on: 20241016
 ---
 A customer of ours (a leading Italian consumer goods retailer) has asked us to solve the following  problem, that occurs quite frequently and that is not trivial to solve efficiently - and that is very interesting to design and fun to blog about!
 
@@ -186,7 +186,7 @@ the plan is:
 ...
 |* 17 |                INDEX RANGE SCAN      | RANGES_PK |
 |* 18 |                INDEX RANGE SCAN      | RANGES_PK |
-----------------------------------------------
+----------------------------------------------------------
 ---
 11 - access("I"."SKU"='k100')
 ---

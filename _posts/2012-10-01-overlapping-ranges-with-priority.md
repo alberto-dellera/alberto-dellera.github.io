@@ -66,7 +66,7 @@ with instants as (
 ),
 ```
 ``` 
-b,c,d,e.
+b, c, d, e
 ```
 
 The base ranges, i.e. the consecutive ranges that connect all the instants:
@@ -167,7 +167,7 @@ select sku, a, b, price from ranges_joined;
 b---(0,$200)---c---(1,$300)---e
 ```
 
-### Predicate-"pushability"
+### Predicate "pushability"
 
 The first desirable property of this view is that a predicate (such as an equality predicate, but it works even for the "between" operator, less-than, etc) on sku  can be pushed down the view to the base tables. 
 
@@ -188,12 +188,12 @@ the plan is:
 |* 18 |                INDEX RANGE SCAN      | RANGES_PK |
 ----------------------------------------------
 ---
-11 - access(&quot;I&quot;.&quot;SKU&quot;='k100')
+11 - access("I"."SKU"='k100')
 ---
-17 - access(&quot;SKU&quot;='k100')
-18 - access(&quot;SKU&quot;='k100')
+17 - access("SKU"='k100')
+18 - access("SKU"='k100')
 ```
-That means that only the required SKU(s) are fed to the view, and proper indexes (such as RANGES_PK in this case) can be used. So, if you need to refresh only a few skus the response time is going to be almost istantaneous - provided that you have only sane (a few) ranges per sku. Hence you can use the same view for both calculating in bulk prices of all skus (say, in a nightly batch) and calculating a small subset of skus (say, online), and that is a great help for maintenance and testing.
+That means that only the required SKU(s) are fed to the view, and proper indexes (such as RANGES_PK in this case) can be used. So, if you need to refresh only a few skus the response time is going to be almost istantaneous - provided that you have only sane (a few) ranges per sku. Hence you can use the same view for both calculating prices of all skus in bulk (say, in a nightly batch) and calculating a small subset of skus (say, online), and that is a great help for maintenance and testing.
 
 ### Running in parallel
 

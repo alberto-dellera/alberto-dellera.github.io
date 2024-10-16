@@ -18,7 +18,7 @@ migration_from_wordpress:
 ---
 A customer of ours (a leading Italian consumer goods retailer) has asked us to solve the following  problem, that occurs quite frequently and that is not trivial to solve efficiently - and that is very interesting to design and fun to blog about!
 
-## the problem
+## The problem
 
 Prices of [sku](http://en.wikipedia.org/wiki/Stock-keeping_unit)s (i.e. goods) have validity ranges (time intervals) and can overlap; on an overlapping range, the strongest priority  (lower number) wins. In pictures:
 
@@ -33,7 +33,7 @@ b----($200)----d---($300)---e
 
 I'm going to illustrate in detail the pure-SQL algorithm I have designed, and then discuss about its performance and efficiency. As usual, everything I discuss is supported by an [actual demo](/assets/files/2012/09/overlapping_ranges_with_priority.zip). Please note that the algorithm uses analytics functions very, very heavily.
 
-### pure SQL solution
+### Pure SQL solution
 
 The input table:
 ```plsql
@@ -65,7 +65,9 @@ with instants as (
   select sku, b as i from ranges
 ),
 ```
-Output: b,c,d,e.
+``` b,c,d,e.
+```
+
 The base ranges, i.e. the consecutive ranges that connect all the instants:
 ```plsql
 base_ranges as (
@@ -80,6 +82,7 @@ base_ranges as (
 ),
 ```
 ``` b------c------d------e ```
+
 The original ranges factored over the base ranges; in other words, "cut" by the instants:
 ```plsql
 factored_ranges as (
@@ -155,7 +158,7 @@ ranges_joined as (
          max(bb) over (partition by sku, integral) as b
     from ranges_with_step_integral
          )
-   where step &gt; 0
+   where step < 0
 )
 select sku, a, b, price from ranges_joined;
 ```
@@ -163,9 +166,11 @@ select sku, a, b, price from ranges_joined;
 b---(0,$200)---c---(1,$300)---e
 ```
 
-### predicate-"pushability"
+### Predicate-"pushability"
 
-The first desirable property of this view is that a predicate (such as an equality predicate, but it works even for the "between" operator, less-than, etc) on sku  can be pushed down the view to the base tables. For:
+The first desirable property of this view is that a predicate (such as an equality predicate, but it works even for the "between" operator, less-than, etc) on sku  can be pushed down the view to the base tables. 
+
+For:
 ```plsql
 select * from ranges_output_view where sku = 'k100';
 ```
@@ -187,9 +192,9 @@ the plan is:
 17 - access(&quot;SKU&quot;='k100')
 18 - access(&quot;SKU&quot;='k100')
 ```
-That means that only the required SKU(s) are fed to the view, and proper indexes (such as RANGES_PK in this case) can be used. So, if you need to refresh only a few skus the response time is going to be almost istantaneous - provided that you have only sane (a few) ranges per sku. Hence you can use the same view for both calculating prices of all skus (say, in a nightly batch) and calculating a small subset of skus (say, online), and that is a great help for maintenance and testing.
+That means that only the required SKU(s) are fed to the view, and proper indexes (such as RANGES_PK in this case) can be used. So, if you need to refresh only a few skus the response time is going to be almost istantaneous - provided that you have only sane (a few) ranges per sku. Hence you can use the same view for both calculating in bulk prices of all skus (say, in a nightly batch) and calculating a small subset of skus (say, online), and that is a great help for maintenance and testing.
 
-### running in parallel
+### Running in parallel
 
 Another desirable property is that the view can operate efficiently in parallel, at least in 11.2.0.3 (I have not tested other versions):
 ```
@@ -198,7 +203,7 @@ Another desirable property is that the view can operate efficiently in parallel,
 -------------------------------------------------------------------
 | SELECT STATEMENT                            |      |            |
 |  PX COORDINATOR                             |      |            |
-|   PX SEND QC (RANDOM)                       | P-&gt;S | QC (RAND)  |
+|   PX SEND QC (RANDOM)                       | P-<S | QC (RAND)  |
 |    VIEW                                     | PCWP |            |
 |     WINDOW SORT                             | PCWP |            |
 |      VIEW                                   | PCWP |            |
@@ -209,19 +214,19 @@ Another desirable property is that the view can operate efficiently in parallel,
 |           WINDOW SORT PUSHED RANK           | PCWP |            |
 |            HASH JOIN                        | PCWP |            |
 |             PX RECEIVE                      | PCWP |            |
-|              PX SEND HASH                   | P-&gt;P | HASH       |
+|              PX SEND HASH                   | P-<P | HASH       |
 |               PX BLOCK ITERATOR             | PCWC |            |
 |                TABLE ACCESS FULL            | PCWP |            |
 |             PX RECEIVE                      | PCWP |            |
-|              PX SEND HASH                   | P-&gt;P | HASH       |
+|              PX SEND HASH                   | P-<P | HASH       |
 |               VIEW                          | PCWP |            |
 |                WINDOW SORT                  | PCWP |            |
 |                 PX RECEIVE                  | PCWP |            |
-|                  PX SEND HASH               | P-&gt;P | HASH       |
+|                  PX SEND HASH               | P-<P | HASH       |
 |                   VIEW                      | PCWP |            |
 |                    SORT UNIQUE              | PCWP |            |
 |                     PX RECEIVE              | PCWP |            |
-|                      PX SEND HASH           | P-&gt;P | HASH       |
+|                      PX SEND HASH           | P-<P | HASH       |
 |                       UNION-ALL             | PCWP |            |
 |                        PX BLOCK ITERATOR    | PCWC |            |
 |                         INDEX FAST FULL SCAN| PCWP |            |
@@ -231,18 +236,19 @@ Another desirable property is that the view can operate efficiently in parallel,
 ```
 There's no point of serialization (all servers communicate parallel-to-parallel), the rows are distributed evenly using an hash distribution function (probably over the sku) and all operations are parallel.
 
-### sku subsetting and partitioning
+### Sku subsetting and partitioning
 
-It is well known that analytics functions use sort operations heavily, and that means (whether or not you are running in parallel) that the temporary tablespace may be used a lot, possibly too much - as it actually happened to me , leading to (in my case) unacceptable performance.
+It is well known that analytics functions use sort operations heavily, and that means (whether or not you are running in parallel) that the temporary tablespace may be used a lot, possibly too much - as it actually happened to me, leading to (in my case) unacceptable performance.
 
 _Side note: as I'm writing this, I realize now that I had probably been hit by the bug illustrated by Jonathan Lewis in [Analytic Agony](http://jonathanlewis.wordpress.com/2009/09/07/analytic-agony/), but of course, overuse of temp could happen, for large datasets, without the bug kicking in._  
 
 A possible solution is to process only a sub-batch of the skus at a time, to keep the sorts running in memory (or with one-pass to temp), leveraging the predicate-pushability of the view. In my case, I have made one step further: I have partitioned the table "ranges" by "sku\_group", replaced in the view every occurrence of "sku" with the pair "sku\_group, sku", and then run something like:  
 ```plsql  
- for s in (select sku\_group from "list of sku\_group") loop  
- select .. from ranges\_output\_view where sku\_group = s.sku\_group;  
+ for s in (select sku_group from "list of sku_group") loop  
+ select .. from ranges_output_view where sku_group = s.sku_group;  
 end loop;  
 ```
 
-The predicate gets pushed down to the table, hence partition elimination kicks in and I can visit the input table one time only, one partition at a time, using a fraction of the resources at a time, and hence vastly improving performance.  
+The predicate gets pushed down to the table, hence partition elimination kicks in and I can visit the input table one time only, one partition at a time, using a fraction of the resources at a time, and hence vastly improving performance.
+
 And that naturally leads to "do-it-yourself parallelism": running a job for every partition in parallel. I'm going to implement it since the customer is salivating about it ... even if it is probably over-engineering :D .

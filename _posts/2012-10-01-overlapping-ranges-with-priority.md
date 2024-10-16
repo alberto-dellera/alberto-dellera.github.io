@@ -65,7 +65,8 @@ with instants as (
   select sku, b as i from ranges
 ),
 ```
-``` b,c,d,e.
+``` 
+b,c,d,e.
 ```
 
 The base ranges, i.e. the consecutive ranges that connect all the instants:
@@ -89,7 +90,7 @@ factored_ranges as (
   select i.sku, bi.ba, bi.bb, i.a, i.b, i.prio, i.price
     from ranges i, base_ranges bi
    where i.sku = bi.sku
-     and (i.a &lt;= bi.ba and bi.ba &lt; i.b)
+     and (i.a <= bi.ba and bi.ba < i.b)
 ),
 ```
 ```
@@ -158,7 +159,7 @@ ranges_joined as (
          max(bb) over (partition by sku, integral) as b
     from ranges_with_step_integral
          )
-   where step < 0
+   where step > 0
 )
 select sku, a, b, price from ranges_joined;
 ```
@@ -203,7 +204,7 @@ Another desirable property is that the view can operate efficiently in parallel,
 -------------------------------------------------------------------
 | SELECT STATEMENT                            |      |            |
 |  PX COORDINATOR                             |      |            |
-|   PX SEND QC (RANDOM)                       | P-<S | QC (RAND)  |
+|   PX SEND QC (RANDOM)                       | P->S | QC (RAND)  |
 |    VIEW                                     | PCWP |            |
 |     WINDOW SORT                             | PCWP |            |
 |      VIEW                                   | PCWP |            |
@@ -214,19 +215,19 @@ Another desirable property is that the view can operate efficiently in parallel,
 |           WINDOW SORT PUSHED RANK           | PCWP |            |
 |            HASH JOIN                        | PCWP |            |
 |             PX RECEIVE                      | PCWP |            |
-|              PX SEND HASH                   | P-<P | HASH       |
+|              PX SEND HASH                   | P->P | HASH       |
 |               PX BLOCK ITERATOR             | PCWC |            |
 |                TABLE ACCESS FULL            | PCWP |            |
 |             PX RECEIVE                      | PCWP |            |
-|              PX SEND HASH                   | P-<P | HASH       |
+|              PX SEND HASH                   | P->P | HASH       |
 |               VIEW                          | PCWP |            |
 |                WINDOW SORT                  | PCWP |            |
 |                 PX RECEIVE                  | PCWP |            |
-|                  PX SEND HASH               | P-<P | HASH       |
+|                  PX SEND HASH               | P->P | HASH       |
 |                   VIEW                      | PCWP |            |
 |                    SORT UNIQUE              | PCWP |            |
 |                     PX RECEIVE              | PCWP |            |
-|                      PX SEND HASH           | P-<P | HASH       |
+|                      PX SEND HASH           | P->P | HASH       |
 |                       UNION-ALL             | PCWP |            |
 |                        PX BLOCK ITERATOR    | PCWC |            |
 |                         INDEX FAST FULL SCAN| PCWP |            |
@@ -244,11 +245,11 @@ _Side note: as I'm writing this, I realize now that I had probably been hit by t
 
 A possible solution is to process only a sub-batch of the skus at a time, to keep the sorts running in memory (or with one-pass to temp), leveraging the predicate-pushability of the view. In my case, I have made one step further: I have partitioned the table "ranges" by "sku\_group", replaced in the view every occurrence of "sku" with the pair "sku\_group, sku", and then run something like:  
 ```plsql  
- for s in (select sku_group from "list of sku_group") loop  
+for s in (select sku_group from "list of sku_group") loop  
  select .. from ranges_output_view where sku_group = s.sku_group;  
 end loop;  
 ```
 
 The predicate gets pushed down to the table, hence partition elimination kicks in and I can visit the input table one time only, one partition at a time, using a fraction of the resources at a time, and hence vastly improving performance.
 
-And that naturally leads to "do-it-yourself parallelism": running a job for every partition in parallel. I'm going to implement it since the customer is salivating about it ... even if it is probably over-engineering :D .
+And that naturally leads to "do-it-yourself parallelism": running a job for every partition in parallel. I'm going to implement it ... even if it is probably over-engineering :D .

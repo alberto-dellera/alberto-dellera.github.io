@@ -24,5 +24,4 @@ This is mostly useful to get more details about referenced tables' constraints a
 
 This feature can be activated by specifing dbms\_metadata=y or dbms\_metadata=all (check xplan.sql header of xplan.sql for more informations).
 
-We spoke about xplan in general [here](/blog/2009/08/07/xplan-/).
-
+We spoke about xplan in general [here](/blog/2009/06/07/optimizing-sql-statements-with-xplan/).

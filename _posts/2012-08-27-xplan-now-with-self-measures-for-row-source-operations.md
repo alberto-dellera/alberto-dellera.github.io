@@ -16,7 +16,7 @@ meta:
 author: Alberto Dell'Era
 permalink: "/blog/2012/08/27/xplan-now-with-self-measures-for-row-source-operations/"
 migration_from_wordpress:
-  approved_on: working
+  approved_on: 20241017
 ---
 One of the most useful information that the Oracle kernel attaches to plans in the library cache are measures of various resource consumption figures, such as elapsed time, consistent and current gets, disk reads, etcetera. These can be made available for each plan line (aka "row source operation").
 

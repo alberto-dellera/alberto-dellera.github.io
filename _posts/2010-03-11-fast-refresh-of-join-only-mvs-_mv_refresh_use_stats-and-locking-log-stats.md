@@ -33,7 +33,7 @@ Points 1 and 2 make for the ideal scenario for incremental ("fast") refreshes to
 
 To understand the importance of points 5 and 6, please check [this post of mine](/blog/2009/08/04/fast-refresh-of-join-only-materialized-views-algorithm-summary/); note how those indexes are a necessary prerequisite for the sanity of the DEL and INS steps of the MV process. Without them, the refresh cannot be incremental since it has no physical way to read and propagate only the modified rows and those related to them, but it must scan (uselessly) most of the base tables and MV. But in other for the refresh to be incremental ("fast"), those indexes have to be actually used...
 
-## the issue
+## The issue
 
 Let's illustrate the issue focusing on the DEL step (the easier to discuss about). In the above mentioned post, we have seen that the DEL step uses a single SQL statement whose text, leaving out minor technical details *and hints*, is:
 
@@ -90,7 +90,7 @@ That is due to the engine injecting an HASH_SJ hint in the outermost nested subq
 
 This is recognized as a bug in many scenarios (start from Oracle Support note 578720.1 and follow the references to explore some of them) even if I have not found a clear and exhaustive note that documents the behaviour.
 
-## remedy one: set "_mv_refresh_use_stats"
+## Remedy one: set "_mv_refresh_use_stats"
 
 To get back to the healthy plan, simply set "_mv_refresh_use_stats" to "true" (ask Oracle Support first of course for permission); this makes for a set of hint much more adequate for a fast refresh:
 ```plsql
@@ -144,7 +144,7 @@ If you set \_mv\_refresh\_use\_stats, you get back the 9.2.0.8 plan - and thus y
 ... FROM "TEST_T1" "MAS$" WHERE ROWID IN (SELECT /*+ CARDINALITY(MAS$ 6) NO_SEMIJOIN ...  
 ```  
 
-## remedy two: collect and lock statistics on the logs
+## Remedy two: collect and lock statistics on the logs
 
 Very interestingly, instead of setting the hidden parameter, you have another way to get back to the healthy plan: gather statistics on the MV logs when they are empty AND lock them (as suggested in note 578720.1, albeit not in this scenario and even if setting the parameter is not necessary; thanks to Taral Desai for pointing me to the note). In this case, no hint at all is injected beside a NO\_MERGE for the DEL step:
 

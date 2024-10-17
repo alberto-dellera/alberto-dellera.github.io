@@ -15,7 +15,7 @@ meta:
 author: Alberto Dell'Era
 permalink: "/blog/2011/05/01/tom-kyte-in-italia-5-aprile-2011/"
 migration_from_wordpress:
-  approved_on: working
+  approved_on: 20241017
 ---
 [_Note: I'm writing in Italian since this post is about a local event_]
    

@@ -16,7 +16,7 @@ meta:
 author: Alberto Dell'Era
 permalink: "/blog/2010/02/09/xplan-dbms_metadataget_ddl-for-tables-referenced-by-the-plan/"
 migration_from_wordpress:
-  approved_on: working
+  approved_on: 20241017
 ---
 As a minor but useful new feature, [xplan](https://github.com/alberto-dellera/xplan) is now able to integrate into its report the DDL of tables (and indexes) referenced by the plan, calling dbms\_metadata.get\_ddl transparently.
 

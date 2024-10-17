@@ -97,7 +97,7 @@ To get back to the healthy plan, simply set "_mv_refresh_use_stats" to "true" (a
 ... WHERE "TEST_T1_ROWID" IN (SELECT /*+ NO_MERGE  NO_SEMIJOIN  */ ...
 ```
 
->Note: The root cause for this bug is probably due to a change hinted in note 875532.1 - in 10.2.0.3 the meaning of _mv_refresh_use_stats was reversed, but not the default, hence (by mistake?) activating a different piece of the engine code.
+Note: The root cause for this bug is probably due to a change hinted in note 875532.1 - in 10.2.0.3 the meaning of _mv_refresh_use_stats was reversed, but not the default, hence (by mistake?) activating a different piece of the engine code.
 
 The very same problem happens for the INS step; I won't go into much details here (please check the test case spools provided above if interested), but in 9.2.0.8 the base table modified rows are directly fetched using the rowid contained in the log:
 ```
@@ -136,12 +136,12 @@ Whose resource consumption is, of course, proportional to the size of the base t
 
 Even in this case, this is due to the nasty HASH\_SJ hint:  
 ```plsql 
-... FROM "TEST\_T1" "MAS$" WHERE ROWID IN (SELECT /\*+ HASH\_SJ \*/ ...  
+... FROM "TEST_T1" "MAS$" WHERE ROWID IN (SELECT /*+ HASH_SJ \*/ ...  
 ```
 
 If you set \_mv\_refresh\_use\_stats, you get back the 9.2.0.8 plan - and thus you are back to incremental for both the DEL and INS steps. As a side note, a cardinality hint is used, where the cardinality is set to the correct value (6 in my test case):  
 ```plsql 
-... FROM "TEST\_T1" "MAS$" WHERE ROWID IN (SELECT /\*+ CARDINALITY(MAS$ 6) NO\_SEMIJOIN ...  
+... FROM "TEST_T1" "MAS$" WHERE ROWID IN (SELECT /*+ CARDINALITY(MAS$ 6) NO_SEMIJOIN ...  
 ```  
 
 ## remedy two: collect and lock statistics on the logs
@@ -149,8 +149,8 @@ If you set \_mv\_refresh\_use\_stats, you get back the 9.2.0.8 plan - and thus y
 Very interestingly, instead of setting the hidden parameter, you have another way to get back to the healthy plan: gather statistics on the MV logs when they are empty AND lock them (as suggested in note 578720.1, albeit not in this scenario and even if setting the parameter is not necessary; thanks to Taral Desai for pointing me to the note). In this case, no hint at all is injected beside a NO\_MERGE for the DEL step:
 
 ```plsql
-... WHERE "TEST\_T1\_ROWID" IN (SELECT /\*+ NO\_MERGE \*/ ...  
-... FROM "TEST\_T1" "MAS$" WHERE ROWID IN (SELECT ...  
+... WHERE "TEST_T1_ROWID" IN (SELECT /*+ NO_MERGE */ ...  
+... FROM "TEST_T1" "MAS$" WHERE ROWID IN (SELECT ...  
 ```
 
 So, the engine is confident that the CBO will come out with a good plan, and it does not inject any "intelligent" hint. Possibly, and intriguing, this is because by locking the statistics, I am assuring the engine that these statistics are representative of the data anytime. So, locking the statistics is not meant only as a way to prevent dbms\_stats from changing them ... it is deeper than that. At least in this case, you are taking responsibility for them, and Oracle will take that in consideration.

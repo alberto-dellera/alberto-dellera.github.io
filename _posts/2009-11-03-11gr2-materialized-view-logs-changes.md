@@ -18,7 +18,7 @@ migration_from_wordpress:
 ---
 In this post we are going to discuss some 11gR2 changes to materialized view logs that are aimed at increasing the performance of the fast-refresh engine of materialized views (MVs), especially the on-commit variant.
 
-The MV logs, in 10gr2, now comes in [two flavours](http://download.oracle.com/docs/cd/E11882_01/server.112/e10592/statements_6003.htm#i2064649"): the traditional (and still the default) **timestamp**-based one and the brand new **commit SCN**-based one; you choose the latter type by specifing the "WITH COMMIT SCN" clause at MV log creation time. Interestingly, the "old" timestamp-based implementation has been changed as well. Let's examine both with the help, as usual, of a [test case](/assets/files/2009/11/11gr2_mv_logs.zip)
+The MV logs, in 10gr2, now comes in [two flavours](http://download.oracle.com/docs/cd/E11882_01/server.112/e10592/statements_6003.htm#i2064649"): the traditional (and still the default) **timestamp**-based one and the brand new **commit SCN**-based one; you choose the latter type by specifing the "WITH COMMIT SCN" clause at MV log creation time. Interestingly, the "old" timestamp-based implementation has been changed as well. Let's examine both with the help, as usual, of a [test case](/assets/files/2009/11/11gr2_mv_logs.zip).
 
 ## Timestamp-based MV logs (the "old" type)
 
@@ -79,7 +79,7 @@ change_vector$$ raw(255)
 xid$$           number(22)
 ```
 
-so, the only difference from the 11gR2 timestamp-based case is that  snaptime$$ is no longer a column of the MV log; the only difference from the pre-11gR2 is that snaptime$$ has been replaced with xid\$\$.
+so, the only difference from the 11gR2 timestamp-based case is that  snaptime\$\$ is no longer a column of the MV log; the only difference from the pre-11gR2 is that snaptime\$\$ has been replaced with xid\$\$.
 
 For this log flavour only, the mapping between the xid that modified the table and its commit-time SCN is now tracked in a new view, all_summap (probably named after "SUMmary MAP", "summary" being yet another synonym for "MV"), which is (as of 11.2.0.1) a straight "select *" of  the dictionary table sys.snap_xcmt\$. To illustrate, the script makes one insert, one update and one delete on the base table, which translates into 4 rows inside the MV log with the same xid:
 

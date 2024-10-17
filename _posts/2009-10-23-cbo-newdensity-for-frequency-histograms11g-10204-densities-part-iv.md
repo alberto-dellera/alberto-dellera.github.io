@@ -18,7 +18,7 @@ migration_from_wordpress:
 ---
 As we have seen in the previous posts of this series, in 11g a new figure named "NewDensity" has been introduced as a replacement for the "density" column statistic for columns whose histogram has been collected; this change has been backported in 10.2.0.4 also. 
 
-In the previous post we discussed how NewDensity influences the CBO cardinality estimate for Height-Balanced histograms; in this one we are going to investigate the same for Frequency Histograms. We will see that the most important change is the introduction of the "half the least popular" rule (see the "[Histogram change](http://jonathanlewis.wordpress.com/2009/04/23/histogram-change)" post by Jonathan Lewis, which distills the findings of [Randolf Geist](http://oracle-randolf.blogspot.com/2009/01/correlation-nocorrelation-and-extended.html) and [Riyaj Shamsudeen](http://orainternals.wordpress.com/2008/12/19/correlation-nocorrelation-and-extended-stats/) - a surprising rule that might easily cause trouble (in fact as Jonathan reports in the comments - bug 6082745 was opened against this rule).
+In the previous post we discussed how NewDensity influences the CBO cardinality estimate for Height-Balanced histograms; in this one we are going to investigate the same for Frequency Histograms. We will see that the most important change is the introduction of the "half the least popular" rule (see the "[Histogram change](http://jonathanlewis.wordpress.com/2009/04/23/histogram-change)" post by Jonathan Lewis, which distills the findings of [Randolf Geist](http://oracle-randolf.blogspot.com/2009/01/correlation-nocorrelation-and-extended.html) and [Riyaj Shamsudeen](http://orainternals.wordpress.com/2008/12/19/correlation-nocorrelation-and-extended-stats/))- a surprising rule that might easily cause trouble (in fact as Jonathan reports in the comments - bug 6082745 was opened against this rule).
 
 The [test case](/assets/files/2009/10/density_post_freq.zip) (script density_post_freq.sql) considers the same test statement we focused on in the previous post (a single equality filter predicate which asks for a value inside the min-max range of the column):
 ```plsql
@@ -70,7 +70,7 @@ E[card] = (0.5 * bkt(least_popular_value) / num_rows) * num_rows
 
 For our test case, the least_popular_value is 8 and bkt(8) = 8, hence E\[card\] = 0.5 * 8 = 4 thanks to  NewDensity being equal to 0.5 \* 8 / 216 = 0.018518519. In fact, we can verify in the 10053 traces (in 10.2.0.4, 11.1.0.7, 11.2.0.1) for our statement, that asks for a not-existent value (64.5), that E\[card\] and NewDensity are set as above:
 ```
-    NewDensity:0.018519, OldDensity:0.002315 BktCnt:216, PopBktCnt:216, PopValCnt:4, NDV:4
+  NewDensity:0.018519, OldDensity:0.002315 BktCnt:216, PopBktCnt:216, PopValCnt:4, NDV:4
   Using density: 0.018519 of col #1 as selectivity of unpopular value pred
   Table: T  Alias: NOT_EXISTENT
     Card: Original: 216.000000  Rounded: 4  Computed: 4.00  Non Adjusted: 4.00
@@ -119,7 +119,7 @@ If you set your own column stats using dbms_stats.set_column_stats, the behaviou
 
 ---
   
-_Bottom note about singleton values_: actually in pre-10.2.0.4 versions, if the value was present in the Frequency histogram but covering a single bucket (hence it was present in the table exactly one time at statistic collection time), it used to be classified as "unpopular" and hence used to get the same treatment as a value not in the histogram - the end result being that the cardinality was estimated as 0.5 rounded up to 1; now it is 1 before rounding as one would intuitively expects. I hope to be able to investigate whether this change fixes the issues about join cardinality estimation I investigated - see "the mystery of halving" in [this investigation](/assets/files/2007/04/JoinOverHistograms.pdf) of mine if interested.
+_Bottom note about singleton values_: actually in pre-10.2.0.4 versions, if the value was present in the Frequency histogram but covering a single bucket (hence it was present in the table exactly one time at statistic collection time), it used to be classified as "unpopular" and hence used to get the same treatment as a value not in the histogram - the end result being that the cardinality was estimated as 0.5 rounded up to 1; now it is 1 before rounding as one would intuitively expects. I hope to be able to investigate whether this change fixes the issues about join cardinality estimation I investigated - see "the mystery of halving" in [this investigation](/assets/files/2007/04/JoinOverHistograms.pdf) of mine if interested (chekc also its [intuitive explanation for the IOUG SELECT Journal](/assets/files/2007/04/JoinCardinalityEstimationWithHistogramsExplained.pdf) and its [supporting material](/assets/files/2007/04/JoinOverHistograms_supporting_material.zip)).
 
 Other posts belonging to this series:  
 [densities part I](/blog/2009/10/03/cbo-about-the-statistical-definition-of-cardinality-densities-part-i/)  

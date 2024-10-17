@@ -14,7 +14,7 @@ meta: {}
 author: Alberto Dell'Era
 permalink: "/blog/2009/10/23/cbo-newdensity-for-frequency-histograms11g-10204-densities-part-iv/"
 migration_from_wordpress:
-  approved_on: working
+  approved_on: 20241017
 ---
 As we have seen in the previous posts of this series, in 11g a new figure named "NewDensity" has been introduced as a replacement for the "density" column statistic for columns whose histogram has been collected; this change has been backported in 10.2.0.4 also. 
 

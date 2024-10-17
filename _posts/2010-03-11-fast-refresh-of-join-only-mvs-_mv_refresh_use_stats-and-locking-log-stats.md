@@ -15,7 +15,7 @@ meta:
 author: Alberto Dell'Era
 permalink: "/blog/2010/03/11/fast-refresh-of-join-only-mvs-_mv_refresh_use_stats-and-locking-log-stats/"
 migration_from_wordpress:
-  approved_on: working
+  approved_on: 20241017
 ---
 A devastating performance degradation of materialized view fast refreshes can happen in versions after 9i - and can be healed rather easily by simply setting the hidden parameter _mv_refresh_use_stats or, a bit surprisingly, by locking statistics on the logs. The problem can manifest at least in the currently-latest patchsets of 10g, 11gR1 and 11gR2 (10.2.0.4, 11.1.0.7 and 11.2.0.1), seems to hit a lot of people, and its root cause are the utilization of wrong hints by the Oracle refresh engine.
 
@@ -150,7 +150,7 @@ Very interestingly, instead of setting the hidden parameter, you have another wa
 
 ```plsql
 ... WHERE "TEST_T1_ROWID" IN (SELECT /*+ NO_MERGE */ ...  
-... FROM "TEST_T1" "MAS$" WHERE ROWID IN (SELECT ...  
+...  FROM "TEST_T1" "MAS$" WHERE ROWID IN (SELECT ...  
 ```
 
 So, the engine is confident that the CBO will come out with a good plan, and it does not inject any "intelligent" hint. Possibly, and intriguing, this is because by locking the statistics, I am assuring the engine that these statistics are representative of the data anytime. So, locking the statistics is not meant only as a way to prevent dbms\_stats from changing them ... it is deeper than that. At least in this case, you are taking responsibility for them, and Oracle will take that in consideration.

@@ -4,7 +4,7 @@ title: An improved OakTable web site
 date: 2010-04-23 16:48:43.000000000 +02:00
 type: post
 parent_id: '0'
-published: true
+published: false
 password: ''
 status: publish
 categories: []

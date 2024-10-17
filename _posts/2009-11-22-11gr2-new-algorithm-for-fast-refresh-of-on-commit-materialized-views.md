@@ -25,13 +25,15 @@ As noted in the post of mine [11gR2: materialized view logs changes](/blog/2009/
 
 In versions before 11gR2, the refresh algorithm for on-commit MVs was the same as the one for on-demand ones, with only minor variants. That is, the algorithm was almost completely the same, just triggered by the commit event instead of by the user.
 
-For an in-depth analysis of the algorithm, I will refer the reader to the discussion about the on-demand algorithm in the post [fast refresh of join-only materialized views - algorithm summary](/blog/2009/08/04/fast-refresh-of-join-only-materialized-views-algorithm-summary/); in passing, the [test case](/assets/files/2009/11/11gr2_join_mv_on_commit.zip) for this post is in fact the very same three-table join MV, just redefined as "on commit" instead of "on demand". To recap, the "old" algorithm (until 11.1.0.7) was:
+For an in-depth analysis of the algorithm, I will refer the reader to the discussion about the on-demand algorithm in the post [fast refresh of join-only materialized views - algorithm summary](/blog/2009/08/04/fast-refresh-of-join-only-materialized-views-algorithm-summary/); in passing, the [test case](/assets/files/2009/11/11gr2_join_mv_on_commit.zip) for this post is in fact the very same three-table join MV, just redefined as "on commit" instead of "on demand". 
+
+To recap, the "old" algorithm (until 11.1.0.7) was:
 
 1) new log rows are inserted with snaptime\$\$=4000 A.D;  
-2) at refresh time (commit time), a snapshot of the new rows is taken, that is, all new rows are marked with snaptime$$= "commit time", using the statement  
+2) at refresh time (commit time), a snapshot of the new rows is taken, that is, all the new rows are marked with snaptime\$\$= "commit time", using the statement  
 ```plsql  
 update MLOG$_TEST_T1  
- set snaptime$$ = :1  
+   set snaptime$$ = :1  
  where snaptime$$ > to_date('2100-01-01:00:00:00','YYYY-MM-DD:HH24:MI:SS')  
 ``` 
 3) all modifications whose snaptime\$\$ is between the date of the last refresh (excluded) and the commit date(included) are propagated to the MV. The propagation consists of two steps.  
@@ -80,7 +82,7 @@ select chartorowid(log.m_row$$)
   from mlog$_test_t1  
  where snaptime$$ > :1  
 ``` 
-4) all obsolete log rows are deleted, that is, all rows whose snaptime$$ is less than or equal the lowest of all refresh times are removed from the log, using the the statement  
+4) all obsolete log rows are deleted, that is, all rows whose snaptime\$\$ is less than or equal the lowest of all refresh times are removed from the log, using the the statement  
 ```plsql 
 delete from mlog$_test_t1  
  where snaptime$$ <= :1  
@@ -88,7 +90,8 @@ delete from mlog$_test_t1
 
 ## Algorithm starting from 11gR2
 
-In 11gR2, the on-commit algorithm is still almost the same as the on-demand one; the "only" change is how modified rows to be propagated are identified, and in general, how logs are managed. Not surprisingly, log rows are now directly identified by the transaction id, which is logged in xid\$\$. In detail:
+In 11gR2, the on-commit algorithm is still almost the same as the on-demand one; the "only" change is how modified rows to be propagated are identified, and in general, how logs are managed. Not surprisingly, log rows are now directly identified by the transaction id, which is logged in xid\$\$. 
+In detail:
 
 1) new log rows are inserted with xid\$\$ = transaction id;  
 2) at refresh time (commit time), **no snapshot is taken** , that is, the MV log is not updated at all;  

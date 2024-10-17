@@ -14,7 +14,7 @@ meta:
 author: Alberto Dell'Era
 permalink: "/blog/2012/09/16/refresh-fast-of-materialized-views-optimized-by-oracle-as-complete/"
 migration_from_wordpress:
-  approved_on: working 
+  approved_on: 20241017 
 ---
 In my current "big" project, I am building a network of nested materialized views to transform rows of  one schema into rows of another (very different) schema. The former is used by the old (but still live) version of an application of ours, the latter by the new version; our idea is to incrementally (aka "fast") refresh the network daily in order to have the new schema ready when the new version goes live. We need this nework because we have only a few hours of allowed downtime, and the transformations are very complex: the MV network is going to be composed of at least 200+ MVs, each containing tens of millions of rows.
 
@@ -40,7 +40,7 @@ exec dbms_mview.refresh('dellera_mv3', method=>'f', atomic_refresh => true);
 It's no surprise that we get:
 ```plsql
 SQL> select mview_name, last_refresh_type from user_mviews
-where mview_name like 'DELLERA%' order by mview_name;
+      where mview_name like 'DELLERA%' order by mview_name;
 ```
 ```
 MVIEW_NAME           LAST_REFRESH_TYPE

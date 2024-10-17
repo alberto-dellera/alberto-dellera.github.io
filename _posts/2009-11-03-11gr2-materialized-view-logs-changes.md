@@ -14,7 +14,7 @@ meta:
 author: Alberto Dell'Era
 permalink: "/blog/2009/11/03/11gr2-materialized-view-logs-changes/"
 migration_from_wordpress:
-  approved_on: working
+  approved_on: 20241017
 ---
 In this post we are going to discuss some 11gR2 changes to materialized view logs that are aimed at increasing the performance of the fast-refresh engine of materialized views (MVs), especially the on-commit variant.
 
@@ -79,7 +79,7 @@ change_vector$$ raw(255)
 xid$$           number(22)
 ```
 
-so, the only difference from the 11gR2 timestamp-based case is that  snaptime\$\$ is no longer a column of the MV log; the only difference from the pre-11gR2 is that snaptime\$\$ has been replaced with xid\$\$.
+so, the only difference from the pre-11gR2 is that snaptime\$\$ has been replaced with xid\$\$.
 
 For this log flavour only, the mapping between the xid that modified the table and its commit-time SCN is now tracked in a new view, all_summap (probably named after "SUMmary MAP", "summary" being yet another synonym for "MV"), which is (as of 11.2.0.1) a straight "select *" of  the dictionary table sys.snap_xcmt\$. To illustrate, the script makes one insert, one update and one delete on the base table, which translates into 4 rows inside the MV log with the same xid:
 

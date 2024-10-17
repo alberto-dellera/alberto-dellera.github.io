@@ -15,7 +15,7 @@ meta: {}
 author: Alberto Dell'Era
 permalink: "/blog/2009/11/22/11gr2-new-algorithm-for-fast-refresh-of-on-commit-materialized-views/"
 migration_from_wordpress:
-  approved_on: working
+  approved_on: 20241017
 ---
 This post investigates the improvements that have been made in 11gR2 to the fast refresh engine of materialized views (MVs) that are set to be automatically refreshed at commit time. We speak about join-only materialized views only in this post, as always with the help of a test case.
 
@@ -123,11 +123,11 @@ select jv.j1_2, jv.x1, jv.pk1, jv.rid$,
     select log.rowid rid$, log.*  
       from test_t1 log  
      where rowid in  
-      (  
-        select chartorowid(log.m_row$$)  
-          from mlog$_test_t1  
-         where xid$$ = :1  
-      )  
+     (  
+       select chartorowid(log.m_row$$)  
+         from mlog$_test_t1  
+        where xid$$ = :1  
+     )  
  ) jv, -- no "as of snapshot (:2) jv" clause  
    test_t2 as of snapshot (:2) mas2,  
    test_t3 as of snapshot (:2) mas3  
@@ -138,7 +138,7 @@ select jv.j1_2, jv.x1, jv.pk1, jv.rid$,
 Hence, the big difference from the previous versions case is that rows in the MV log are identified very simply by the transaction that logged them (the committing transaction, of course), by the subquery  
 ```plsql
 select chartorowid(log.m_row$$)  
- from mlog$_test_t1  
+  from mlog$_test_t1  
  where xid$$ = :1  
 ```  
 4) all obsolete log rows are deleted, that is, the rows logged by the committing transaction are removed, using the the statement  
@@ -153,7 +153,7 @@ The new algorithm is for sure much simpler and more elegant. Performance is impr
 
 I strongly believe that studying the internals is the best way to learn how to make the best use of any feature. Let's see an example of how the few bits of "internal knowledge" I shared here can be used in practice - that is, how a little investment in investigation makes for huge savings in effort afterwards, and huge gains in effectiveness of your work as well.
 
-It is well-known that it can be sometimes beneficial, in pre-11gR2, to place an index on the log (indexing the log is even suggested by support note "258252 "MATERIALIZED VIEW REFRESH: Locking, Performance, Monitoring"). The scenario that benefits the most from such an index is when the log is composed of mostly-empty blocks, and hence an index access is preferable over a full table(log) scan; you get mostly-empty blocks, for example, when there are peeks in activity on the master tables that keep the log High Water Mark very high.
+It is well-known that it can be sometimes beneficial, in pre-11gR2, to place an index on the log (indexing the log is even suggested by support note "258252 MATERIALIZED VIEW REFRESH: Locking, Performance, Monitoring"). The scenario that benefits the most from such an index is when the log is composed of mostly-empty blocks, and hence an index access is preferable over a full table(log) scan; you get mostly-empty blocks, for example, when there are peeks in activity on the master tables that keep the log High Water Mark very high.
 
 From the above discussion, it is obvious that in pre-11gR2, the best index for join-only MVs was on (snaptime\$\$, m\_row\$\$) - not on snaptime\$\$ alone as it is sometimes suggested - to make the refresh operation an index-only one.
 

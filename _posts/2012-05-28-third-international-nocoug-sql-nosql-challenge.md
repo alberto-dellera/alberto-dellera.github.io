@@ -13,7 +13,7 @@ meta:
 author: Alberto Dell'Era
 permalink: "/blog/2012/05/28/third-international-nocoug-sql-nosql-challenge/"
 migration_from_wordpress:
-  approved_on: working
+  approved_on: 20241017
 ---
 For anyone into using their SQL skills creatively, and getting out of the boring SQL-coding daily routine ... here is a puzzle that is both entertaining and challenging, and with a real prize for the winner!
 

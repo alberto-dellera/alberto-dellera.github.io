@@ -14,7 +14,7 @@ meta:
 author: Alberto Dell'Era
 permalink: "/blog/2009/10/16/cbo-newdensity-replaces-density-in-11g-10204-densities-part-iii/"
 migration_from_wordpress:
-  approved_on: working
+  approved_on: 20241018
 ---
 In this post we are going to explore and explain the rationale for the formula used by the CBO to compute the "NewDensity" figure that replaces, from 10.2.0.4 onwards, the "density" column statistic in the cardinality estimation formulae for columns with height-balanced (HB) histograms defined.
 

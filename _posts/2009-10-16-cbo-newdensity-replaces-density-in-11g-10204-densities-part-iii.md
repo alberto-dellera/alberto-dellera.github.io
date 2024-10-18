@@ -48,7 +48,7 @@ We discussed, in the previous post, how density is carefully calculated by dbms\
 
 Switching to 10.2.0.4 - the formula for E\[card\] is still the same, but with "density" replaced by "NewDensity" (as hinted by the fact that "density" is reported as "OldDensity" in the 10053 trace files, as we are going to see in a moment):  
 ``` 
-E[card] = NewDensity \* num\_rows;  
+E[card] = NewDensity * num_rows;  
 ```
 
 NewDensity is not stored anywhere in the data dictionary, but it is computed at query optimization time by the CBO (note that density is still computed by dbms\_stats using the old formula, but then it is ignored by the CBO). The NewDensity formula is based mainly on some histogram-derived figures; using the same names found in 10053 traces:

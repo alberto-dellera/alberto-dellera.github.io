@@ -18,7 +18,7 @@ migration_from_wordpress:
 ---
 In this post we are going to explore and explain the rationale for the formula used by the CBO to compute the "NewDensity" figure that replaces, from 10.2.0.4 onwards, the "density" column statistic in the cardinality estimation formulae for columns with height-balanced (HB) histograms defined.
 
-In a [previous post](blog/2009/10/10/cbo-the-formula-for-the-density-column-statistic-densities-part-ii/), we already discussed the pre-10.2.0.4 scenario: we saw how and when the "density" column statistic is used in the cardinality formula for equality filter predicates, we explained its statistical rationale and defining formula, introduced the concept of the NPS (Not Popular Subtable), and built a test case. Now we are going to use the very same test case and explain the differences in the most recent versions (the previous post zip file contains logs for them also).
+In a [previous post](/blog/2009/10/10/cbo-the-formula-for-the-density-column-statistic-densities-part-ii/), we already discussed the pre-10.2.0.4 scenario: we saw how and when the "density" column statistic is used in the cardinality formula for equality filter predicates, we explained its statistical rationale and defining formula, introduced the concept of the NPS (Not Popular Subtable), and built a test case. Now we are going to use the very same test case and explain the differences in the most recent versions (the previous post zip file contains logs for them also).
 
 To summarize the test case - we have a table T with a single column VALUE, exponentially distributed, and with a SIZE 5 Height-Balanced histogram collected on. The histogram is:
 ```plsql
@@ -29,7 +29,7 @@ SQL> select ep, value, popularity from formatted_hist;
 ---------- ---------- ----------
          0          1          0  
          1         16          0  
-         5         64           1  
+         5         64          1  
 ```  
 Thus, we have a single popular value, 64; all the others are unpopular.
 
@@ -41,7 +41,7 @@ select ...
 ```  
 the literal value is not a popular value (but inside the 1-64 interval) and hence, in pre-10.2.0.4, the formula used for the expected cardinality calculation is equal to:  
 ```  
-E[card] = density \* num\_rows;  
+E[card] = density * num_rows;  
 ```
 
 We discussed, in the previous post, how density is carefully calculated by dbms\_stats to get back the expected cardinality of the family (class) of all possible equality filter predicate statements that hit the NPS, under the usual "[non-empty result set assumption](/blog/2009/09/03/cbo-the-non-empty-result-set-assumption/)" and the further (strange and strong) assumption that the more a value is represented in the NPS, the higher the probability that the value is used as the literal of the equality predicate (an assumption that mathematically translates into the formula "w(:x) = count(:x) / num\_rows\_nps").
@@ -80,17 +80,19 @@ The formula is statistically based on replacing the previous versions' assumptio
 
 If you plug this shape of w(:x) into the formula for E\[card\], you get  
 ```  
-E[card] = sum ( w(:x) \* E[count(:x)] ) =  
- = sum (E[count(:x)] ) / num\_distinct\_nps  
-for all values of :x (belonging to the NPS)  
+E[card] = sum ( w(:x) * E[count(:x)] ) =  
+        = sum (E[count(:x)] ) / num_distinct_nps  
+        for all values of :x (belonging to the NPS)  
 ```  
 that is  
 ``` 
-E[card] = num\_rows\_nps / num\_distinct\_nps  
+E[card] = num_rows_nps / num_distinct_nps  
 ```  
 which is, not surprising, the standard formula used for columns without histograms, but applied to the NPS, not the whole table.
 
-One possibility for producing the above E\[car\d] value at run-time could have been to change dbms\_stats to compute a value for "density" equal to (num\_rows\_nps / num\_distinct\_nps) / num\_rows; but forcing users to recompute statistics for all their tables in their upgraded databases is not really a viable option. Hence, the CBO designers chose to simply ignore "density" and calculate the above formula at run-time, mining the histogram, at the cost of reduced precision. In fact, the easy part is num\_distinct\_nps, which is obviously exactly equal to num\_distinct minus the number of popular values; but num\_rows\_nps can only calculated approximately, since the histogram is a (deterministic) sample of the column values obtained by first sorting the column values and then sampling on a uniform grid (for more information and illustration, see the first part of [this article of mine](/assets/files/2007/04/JoinCardinalityEstimationWithHistogramsExplained.pdf)). Using the histogram, the best approximation for num\_rows\_nps is num\_rows times the fraction of buckets not covered by popular values. Hence, using the 10053 terminology  
+One possibility for producing the above E\[card\] value at run-time could have been to change dbms\_stats to compute a value for "density" equal to "(num\_rows\_nps / num\_distinct\_nps) / num\_rows"; but forcing users to recompute statistics for all their tables in their upgraded databases is not really a viable option. 
+
+Hence, the CBO designers chose to simply ignore "density" and calculate the above formula at run-time, mining the histogram, at the cost of reduced precision. In fact, the easy part is num\_distinct\_nps, which is obviously exactly equal to num\_distinct minus the number of popular values; but num\_rows\_nps can only calculated approximately, since the histogram is a (deterministic) sample of the column values obtained by first sorting the column values and then sampling on a uniform grid (for more information and illustration, see the first part of [this article of mine](/assets/files/2007/04/JoinCardinalityEstimationWithHistogramsExplained.pdf)). Using the histogram, the best approximation for num\_rows\_nps is num\_rows times the fraction of buckets not covered by popular values. Hence, using the 10053 terminology  
 ```  
 num_distinct_nps = NDV - PopValCnt (exactly)
 
@@ -107,7 +109,7 @@ For a summary of the above discussion and some more discussion, check back [this
 As a final nore - NewDensity is used also for Frequency Histograms, and in a very creative way; we will discuss this in part IV of this series.
 
 Other posts belonging to this series:  
-[densities part I](blog/2009/10/03/cbo-about-the-statistical-definition-of-cardinality-densities-part-i/)  
-[densities part II](blog/2009/10/10/cbo-the-formula-for-the-density-column-statistic-densities-part-ii/)  
-[densities part IV](blog/2009/10/23/cbo-newdensity-for-frequency-histograms11g-10204-densities-part-iv/)
+[densities part I](/blog/2009/10/03/cbo-about-the-statistical-definition-of-cardinality-densities-part-i/)  
+[densities part II](/blog/2009/10/10/cbo-the-formula-for-the-density-column-statistic-densities-part-ii/)  
+[densities part IV](/blog/2009/10/23/cbo-newdensity-for-frequency-histograms11g-10204-densities-part-iv/)
 

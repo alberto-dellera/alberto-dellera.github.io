@@ -1,0 +1,126 @@
+dellera@ORACLE9I> 
+dellera@ORACLE9I> -- place you db-link name here
+dellera@ORACLE9I> define db_link=loopback
+dellera@ORACLE9I> 
+dellera@ORACLE9I> -- create local tables as a mirror of the remote ones
+dellera@ORACLE9I> create table t1_local as select * from t1@&db_link. where 1=0;
+old   1: create table t1_local as select * from t1@&db_link. where 1=0
+new   1: create table t1_local as select * from t1@loopback where 1=0
+
+Table created.
+
+dellera@ORACLE9I> create table t2_local as select * from t2@&db_link. where 1=0;
+old   1: create table t2_local as select * from t2@&db_link. where 1=0
+new   1: create table t2_local as select * from t2@loopback where 1=0
+
+Table created.
+
+dellera@ORACLE9I> 
+dellera@ORACLE9I> -- fill remote tables with test data
+dellera@ORACLE9I> delete from t1@&db_link.;
+old   1: delete from t1@&db_link.
+new   1: delete from t1@loopback
+
+0 rows deleted.
+
+dellera@ORACLE9I> delete from t2@&db_link.;
+old   1: delete from t2@&db_link.
+new   1: delete from t2@loopback
+
+0 rows deleted.
+
+dellera@ORACLE9I> insert into t1@&db_link. (x) values (1);
+old   1: insert into t1@&db_link. (x) values (1)
+new   1: insert into t1@loopback (x) values (1)
+
+1 row created.
+
+dellera@ORACLE9I> insert into t2@&db_link. (x) values (2);
+old   1: insert into t2@&db_link. (x) values (2)
+new   1: insert into t2@loopback (x) values (2)
+
+1 row created.
+
+dellera@ORACLE9I> commit;
+
+Commit complete.
+
+dellera@ORACLE9I> 
+dellera@ORACLE9I> -- get current remote scn
+dellera@ORACLE9I> variable scn number
+dellera@ORACLE9I> exec :scn := as_of_scn_views_pkg.get_remote_scn@&db_link.;
+
+PL/SQL procedure successfully completed.
+
+dellera@ORACLE9I> 
+dellera@ORACLE9I> -- create as-of-scn views
+dellera@ORACLE9I> begin
+  2    as_of_scn_views_pkg.create_as_of_scn_view@&db_link. ('t1', 't1_scn_view', :scn);
+  3    as_of_scn_views_pkg.create_as_of_scn_view@&db_link. ('t2', 't2_scn_view', :scn);
+  4  end;
+  5  /
+old   2:   as_of_scn_views_pkg.create_as_of_scn_view@&db_link. ('t1', 't1_scn_view', :scn);
+new   2:   as_of_scn_views_pkg.create_as_of_scn_view@loopback ('t1', 't1_scn_view', :scn);
+old   3:   as_of_scn_views_pkg.create_as_of_scn_view@&db_link. ('t2', 't2_scn_view', :scn);
+new   3:   as_of_scn_views_pkg.create_as_of_scn_view@loopback ('t2', 't2_scn_view', :scn);
+
+PL/SQL procedure successfully completed.
+
+dellera@ORACLE9I> show errors;
+No errors.
+dellera@ORACLE9I> 
+dellera@ORACLE9I> -- delete from remote tables
+dellera@ORACLE9I> delete from t1@&db_link.;
+old   1: delete from t1@&db_link.
+new   1: delete from t1@loopback
+
+1 row deleted.
+
+dellera@ORACLE9I> delete from t2@&db_link.;
+old   1: delete from t2@&db_link.
+new   1: delete from t2@loopback
+
+1 row deleted.
+
+dellera@ORACLE9I> commit;
+
+Commit complete.
+
+dellera@ORACLE9I> 
+dellera@ORACLE9I> -- copy data from the consistent image
+dellera@ORACLE9I> insert /*+ append */ into t1_local select * from t1_scn_view@&db_link.;
+old   1: insert /*+ append */ into t1_local select * from t1_scn_view@&db_link.
+new   1: insert /*+ append */ into t1_local select * from t1_scn_view@loopback
+
+1 row created.
+
+dellera@ORACLE9I> commit;
+
+Commit complete.
+
+dellera@ORACLE9I> insert /*+ append */ into t2_local select * from t2_scn_view@&db_link.;
+old   1: insert /*+ append */ into t2_local select * from t2_scn_view@&db_link.
+new   1: insert /*+ append */ into t2_local select * from t2_scn_view@loopback
+
+1 row created.
+
+dellera@ORACLE9I> commit;
+
+Commit complete.
+
+dellera@ORACLE9I> 
+dellera@ORACLE9I> -- show local data
+dellera@ORACLE9I> select * from t1_local;
+
+         X
+----------
+         1
+
+dellera@ORACLE9I> select * from t2_local;
+
+         X
+----------
+         2
+
+dellera@ORACLE9I> 
+dellera@ORACLE9I> spool off

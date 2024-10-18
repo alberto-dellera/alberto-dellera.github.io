@@ -1,0 +1,145 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head><title>CBO: range predicate cardinality, speculation</title>
+</head><body>
+<br><b>Speculation about the CBO reasoning</b>
+<br>
+<br>Why the CBO uses a such complicated, and seemingly counterintuitive, formula, especially when the range is completely inside one of the two lateral bands ?
+<br>
+<br>In my opinion, that's because
+<br>(a) the CBO uses the knowledge that one distinct value is placed in min_x, and another in max_x, to build a near-histogram;
+<br>(b) the CBO expects that the data near min_x and max_x may not reflect perfectly the recorded statistics.
+<br>
+<br> Fact 1: if we select <i>around</i> min_x (ie including min_x in the requested range), the CBO predicts a cardinality close to num_rows/num_distinct, <i>regardless of the operator type (<, <=, >, <=)</i>, and even for a range of <i>infinitesimal width</i> (where we'd expect a cardinality near to 0); using again our num_distinct=4 case, num_rows=4000000, num_rows/num_distinct = 1,000,000, min_x = 0 (<a href="range_sel_speculation.sql">range_sel_speculation.sql</a>):
+<pre>
+SQL> select x from t where x >  0 - 1e-6 and x <  0 + 1e-6;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |  1000K|  2929K|  1436   (6)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |  1000K|  2929K|  1436   (6)| 00:00:18 |
+--------------------------------------------------------------------------
+SQL> select x from t where x >= 0 - 1e-6 and x <  0 + 1e-6;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |  1000K|  2929K|  1436   (6)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |  1000K|  2929K|  1436   (6)| 00:00:18 |
+--------------------------------------------------------------------------
+SQL> select x from t where x >= 0 - 1e-6 and x <= 0 + 1e-6;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |  1000K|  2929K|  1436   (6)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |  1000K|  2929K|  1436   (6)| 00:00:18 |
+--------------------------------------------------------------------------
+SQL> select x from t where x >  0 - 1e-6 and x <= 0 + 1e-6;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |  1000K|  2929K|  1436   (6)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |  1000K|  2929K|  1436   (6)| 00:00:18 |
+--------------------------------------------------------------------------
+</pre>
+
+This is the behaviour we'd expect if we had collected a frequency histogram, and <i> one value of the histogram were inside the range</i> (check "<a href="http://www.jlcomp.demon.co.uk/cbo_book/ind_book.html#addenda">Cost Based Oracle</a>", page 165). 
+<br>
+<br>It's true that we have collected no histogram, but we haven't prevented the CBO from knowing that one distinct value is placed in min_x and another in max_x. We have indeed concealed the information about the row count over these two distinct values, and so the CBO assumes that every distinct value has the same number of rows associated : num_rows/num_distinct.
+<br>
+<br>Fact 2 : if we select <i>near</i> min_x or max_x and inside the min_x <--> max_x interval, we get the same result (cardinality equal to num_rows/num_distinct over an <i>infinitesimal</i> range, independency from the actual operator type (<, <=, >, <=)</i>) :
+<pre>
+SQL> select x from t where x > 0 + 1e-6 and x < 0 + 1e-6 + 1e-9;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |  1000K|  2929K|  1436   (6)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |  1000K|  2929K|  1436   (6)| 00:00:18 |
+--------------------------------------------------------------------------
+SQL> select x from t where x >= 0 + 1e-6 and x < 0 + 1e-6 + 1e-9;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |  1000K|  2929K|  1436   (6)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |  1000K|  2929K|  1436   (6)| 00:00:18 |
+--------------------------------------------------------------------------
+SQL> select x from t where x >= 0 + 1e-6 and x <= 0 + 1e-6 + 1e-9;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |  1000K|  2929K|  1436   (6)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |  1000K|  2929K|  1436   (6)| 00:00:18 |
+--------------------------------------------------------------------------
+SQL> select x from t where x > 0 + 1e-6 and x <= 0 + 1e-6 + 1e-9;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |  1000K|  2929K|  1436   (6)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |  1000K|  2929K|  1436   (6)| 00:00:18 |
+--------------------------------------------------------------------------
+</pre>
+Why the CBO returns 1000K and not 0 (rounded to the usual 1) when we select <u>near</u> min_x, but we don't <u>include</u> min_x in the range ? Well, that's consistent with the new behaviour of 10g ("<a href="http://www.jlcomp.demon.co.uk/cbo_book/ind_book.html#addenda">Cost Based Oracle</a>", page 130): when you select (fact 3) outside but near the min_x <--> max_x interval, you get the same result again:
+<pre>
+SQL> select x from t where x > 0 - 1e-6 - 1e-9 and x < 0 - 1e-6;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |  1000K|  2929K|  1436   (6)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |  1000K|  2929K|  1436   (6)| 00:00:18 |
+--------------------------------------------------------------------------
+SQL> select x from t where x >= 0 - 1e-6 - 1e-9 and x < 0 - 1e-6;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |  1000K|  2929K|  1436   (6)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |  1000K|  2929K|  1436   (6)| 00:00:18 |
+--------------------------------------------------------------------------
+SQL> select x from t where x >= 0 - 1e-6 - 1e-9 and x <= 0 - 1e-6
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |  1000K|  2929K|  1436   (6)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |  1000K|  2929K|  1436   (6)| 00:00:18 |
+--------------------------------------------------------------------------
+SQL> select x from t where x > 0 - 1e-6 - 1e-9 and x <= 0 - 1e-6;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |  1000K|  2929K|  1436   (6)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |  1000K|  2929K|  1436   (6)| 00:00:18 |
+--------------------------------------------------------------------------
+</pre>
+If the CBO trusted perfectly the recorded statistics, it should predict a cardinality of 0 (as it did in 9i), since we're selecting outside the minx <--> max_x interval; but it doesn't, probably because in many cases, the data changes "rapidly" near min_x and/or max_x (think about column x as "insert_date", "last_update_time", "sequence-driven PK", etc), and so the min_x/max_x cannot be considered completely representative of the actual data - they are somewhat "weaker" statistics, the real value is probably close but not exactly the same.
+<br>
+<br>And so - the CBO assumes that when we select near the recorded statistic min_x, we are actually selecting around the real min_x - and the same reasoning is made for fact 2.
+<br>
+<br>
+So to recap - my interpretation is that the CBO threats a selection <i>near</i> min_x/max_x as a selection <i>around</i> min_x/max_x, and a selection <i>around</i> min_x/max_x as selecting exactly one value of a frequency histogram with row count equal to num_rows / num_distinct.
+<br>
+<br>Then of course, as the range drifts away from min_x and/or max_x - the CBO interpolates to the "average" values inside [ num_rows * (high_x - low_x) / (max_x - min_x) ], and outside [0]  minx <--> max_x (data from <a href="range_sel_speculation.sql">range_sel_speculation.sql</a>;
+here's the data for the <a href="range_sel_speculation_open_open_data.dat">red</a>, <a href="range_sel_speculation_closed_open_data.dat">green</a>, <a href="range_sel_speculation_closed_closed_data.dat">blue</a>, <a href="range_sel_speculation_open_closed_data.dat">violet</a> lines) :
+<br>
+<img src="range_sel_speculation_data.jpeg">  
+<br>
+but we can see the presence of the near-histogram for min_x = 0 and max_x = 10.
+<br>
+<br> 
+  
+Here's a link back to the <a href = "range_sel_conclusion.html">conclusion</a>.
+
+<br><br>
+<i>For corrections / feedback:<br>
+alberto.dellera@gmail.com</i>
+<br><br>
+
+<!-- Start of StatCounter Code -->
+<script type="text/javascript" language="javascript">
+var sc_project=2420231; 
+var sc_invisible=1; 
+var sc_partition=23; 
+var sc_security="d66786aa"; 
+var sc_text=2; 
+</script>
+
+<script type="text/javascript" language="javascript" src="http://www.statcounter.com/counter/counter.js"></script><noscript><a href="http://www.statcounter.com/" target="_blank"><img  src="http://c24.statcounter.com/counter.php?sc_project=2420231&java=0&security=d66786aa&invisible=0" alt="site stats" border="0"></a> </noscript>
+<!-- End of StatCounter Code -->
+
+</body></html>

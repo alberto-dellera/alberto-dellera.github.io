@@ -1,0 +1,148 @@
+SQL> 
+SQL> -- workaround for bug 4626732, 5752903 "ORA-07445 [ACCESS_VIOLATION] [_evaopn2+153]"
+SQL> alter session set "_optimizer_native_full_outer_join"=force;
+
+Session altered.
+
+SQL> 
+SQL> drop table lhs;
+
+Table dropped.
+
+SQL> drop table rhs;
+
+Table dropped.
+
+SQL> drop table overlaps_results;
+
+Table dropped.
+
+SQL> 
+SQL> create table lhs (x number) pctfree 0 nologging;
+
+Table created.
+
+SQL> create table rhs (x number) pctfree 0 nologging;
+
+Table created.
+
+SQL> create table overlaps_results (
+  2    offset	   number not null,
+  3    lhs_buckets int	  not null,
+  4    rhs_buckets int	  not null,
+  5    card_real   number,
+  6    card_impr   number,
+  7    card_cbo    number
+  8  );
+
+Table created.
+
+SQL> 
+SQL> col actual_value form a20
+SQL> col  low_value   form a20
+SQL> col high_value   form a20
+SQL> col card new_value card
+SQL> col cbo_card new_value cbo_card
+SQL> set verify off
+SQL> set feedback off
+SQL> 
+SQL> define buckets = 75
+SQL> define t1off = 50
+SQL> 
+SQL> define t1j1 = 100
+SQL> define t2j1 = 100
+SQL> 
+SQL> set timing on
+SQL> 
+SQL> exec join_over_histograms_improved.install ('lhs', 'x', 'rhs', 'x');
+supporting objects installed for lhs: lhs,x                                                                                                           
+supporting objects installed for rhs: rhs,x                                                                                                           
+supporting objects installed for join                                                                                                                 
+Elapsed: 00:00:01.14
+SQL> 
+SQL> set serveroutput off
+SQL> 
+SQL> declare
+  2    card_real number;
+  3    card_cbo  number;
+  4    card_impr number;
+  5    offset	 int;
+  6  begin
+  7  
+  8    dbms_random.seed(0);
+  9  
+ 10    --for repeat in 1..50 loop
+ 11  
+ 12    execute immediate 'truncate table lhs reuse storage';
+ 13  
+ 14    insert /* append */ into lhs (x)
+ 15    select trunc(dbms_random.value(0, &t1j1 ))
+ 16  	 from dual connect by level <= 10000;
+ 17  
+ 18    for offset_i in 0..4 loop
+ 19  
+ 20  	 offset := 50 + 10 * offset_i;
+ 21  
+ 22  	 execute immediate 'truncate table rhs reuse storage';
+ 23  
+ 24  	 insert /* append */ into rhs (x)
+ 25  	 select offset + trunc(dbms_random.value(0, &t2j1 ))
+ 26  	   from dual connect by level <= 10000;
+ 27  	 commit;
+ 28  
+ 29  	 select count(*) into card_real
+ 30  	   from lhs, rhs
+ 31  	  where lhs.x = rhs.x;
+ 32  
+ 33  	 for lhs_buckets in 75..90 loop
+ 34  	 --for lhs_buckets in 254..254 loop
+ 35  
+ 36  	   dbms_stats.gather_table_stats (user, 'lhs', method_opt =>'for all columns size '||lhs_buckets, estimate_percent => 100);
+ 37  
+ 38  	   for rhs_buckets in 75..90 loop
+ 39  	   --for rhs_buckets in 254..254 loop
+ 40  
+ 41  	     dbms_stats.gather_table_stats (user, 'rhs', method_opt =>'for all columns size '||rhs_buckets, estimate_percent => 100);
+ 42  
+ 43  	     card_cbo  := cbo_cardinality.get ('lhs', 'x', 'rhs', 'x');
+ 44  	     card_impr := join_over_histograms_improved.get ('lhs', 'x', 'rhs', 'x', 'N', p_correct_notpop => 'Y');
+ 45  
+ 46  	     insert into overlaps_results (offset, lhs_buckets, rhs_buckets, card_real, card_impr, card_cbo)
+ 47  				   values (offset, lhs_buckets, rhs_buckets, card_real, card_impr, card_cbo);
+ 48  	   end loop;
+ 49  	 end loop;
+ 50    end loop;
+ 51  
+ 52    --end loop;
+ 53  
+ 54    commit;
+ 55  end;
+ 56  /
+Elapsed: 00:09:06.00
+SQL> 
+SQL> set timing off
+SQL> set serveroutput on size 1000000
+SQL> 
+SQL> with r as (
+  2    select 100 * (card_impr - card_real) / card_real as diff_perc
+  3  	 from overlaps_results
+  4  )
+  5  select avg (abs (diff_perc)), stddev (abs (diff_perc)), max (abs (diff_perc)), count(*), avg (diff_perc)
+  6    from r;
+
+AVG(ABS(DIFF_PERC)) STDDEV(ABS(DIFF_PERC)) MAX(ABS(DIFF_PERC))   COUNT(*) AVG(DIFF_PERC)                                                              
+------------------- ---------------------- ------------------- ---------- --------------                                                              
+         2.32931727             1.91580155          10.1909826       1280      .01436403                                                              
+SQL> 
+SQL> with r as (
+  2    select 100 * (card_cbo - card_real) / card_real as diff_perc
+  3  	 from overlaps_results
+  4  )
+  5  select avg (abs (diff_perc)), stddev (abs (diff_perc)), max (abs (diff_perc)), count(*), avg (diff_perc)
+  6    from r;
+
+AVG(ABS(DIFF_PERC)) STDDEV(ABS(DIFF_PERC)) MAX(ABS(DIFF_PERC))   COUNT(*) AVG(DIFF_PERC)                                                              
+------------------- ---------------------- ------------------- ---------- --------------                                                              
+         362.744308             302.763849          928.785416       1280     358.520517                                                              
+SQL> 
+SQL> spool off

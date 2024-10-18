@@ -1,0 +1,337 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head><title>CBO: (semi-open, semi-closed) range predicate cardinality</title>
+</head><body>
+
+Now let's examine the case of semi-open, semi-closed ranges:
+
+<pre>
+select x from t where x >  low_x and x <= high_x; -- (open, closed)
+select x from t where x >= low_x and x <  high_x; -- (closed, open)
+</pre>
+
+Instead of repeating the same steps, that would be a rather tedious process, let's see how we can apply "<b>formal method of ranges decomposition</b>" to re-use the results for open and closed ranges already discussed.
+<br>
+<br> The strategy is:
+<ul>
+<li> Choose a point X between low_x and high_x;
+<li> decompose in two subranges, one closed, and one open, eg for x >  low_x and x <= high_x:
+<pre>
+ x >  low_x and x <  X
+ x <u>>=</u> X     and x <= high_x 
+</pre> 
+<li> Compute the cardinalities (now on completely open, or completely closed, subranges), and add them;
+<li> subtract num_rows / num_distinct since we have added the undelined ">=" operator.
+</ul>
+Similarly for three, four subranges.
+<br>
+<br>We'll experiment (script <a href="range_sel_semi.sql">range_sel_semi.sql</a>) on the case of num_distinct=4 only; remember that for this case we have:
+<pre>
+ left band     : 0   < x < 2.5
+ central region: 2.5 < x < 7.5
+ right band    : 7.5 < x < 10
+</pre>
+
+
+<ul>
+<li> For ranges completely contained in the left band:
+<ul> 
+<li> For x >  low_x and x <= high_x, choose X at random, eg X = 1.0:
+<pre>
+ SQL> select x from t where x >  0.1 and x <= 2.4;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  1920K|  5625K|  1440   (6)| 00:00:18 | (ORIGINAL)
+ |*  1 |  TABLE ACCESS FULL| T    |  1920K|  5625K|  1440   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x >  0.1 and x <  1.0;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |   960K|  2812K|  1436   (6)| 00:00:18 | (LEFT)
+ |*  1 |  TABLE ACCESS FULL| T    |   960K|  2812K|  1436   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x >= 1.0 and x <= 2.4;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  1960K|  5742K|  1440   (6)| 00:00:18 | (RIGHT)
+ |*  1 |  TABLE ACCESS FULL| T    |  1960K|  5742K|  1440   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ 960K + 1960K - 1000k = 1920K, as requested.
+</pre>
+ Note that the choice of X is irrelevant, since (LEFT) is open and so the right extreme(X) is ignored, and (RIGHT) is closed and so the left extreme (X again) is ignored as well.
+<br> Analitically: 
+<pre>
+    (LEFT) + (RIGHT) - num_rows / num_distinct
+  = height_ramp - height_ramp * (low_x  - min_x) / B 
+  + height_ramp + height_ramp * (high_x - min_x) / B
+  - num_rows / num_distinct 
+  = (num_rows / num_distinct) (high_x - low_x) / B +  num_rows / num_distinct
+  = 1000000 * (2.4 - 0.1) / 2.5 + 1000000 = 1920K.
+</pre>
+<li> For x >=  low_x and x < high_x, choose X at random, eg X = 1.0:
+<pre>
+ SQL> select x from t where x >= 0.1 and x <  2.4;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ -------------------------------------------------------------------------- 
+ |   0 | SELECT STATEMENT  |      |  1000K|  2929K|  1436   (6)| 00:00:18 | (ORIGINAL)
+ |*  1 |  TABLE ACCESS FULL| T    |  1000K|  2929K|  1436   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x >= 0.1 and x <= 1.0;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  1400K|  4101K|  1437   (6)| 00:00:18 | (LEFT)
+ |*  1 |  TABLE ACCESS FULL| T    |  1400K|  4101K|  1437   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x >  1.0 and x <  2.4;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |   600K|  1757K|  1436   (6)| 00:00:18 | (RIGHT)
+ |*  1 |  TABLE ACCESS FULL| T    |   600K|  1757K|  1436   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ 1400K + 600K - 1000K = 1000K, as requested.
+</pre>
+Note that the choice of X is irrelevant, but also that the <b>actual values of low_x and high_x do not matter(!)</b>.
+<br> Analitically:
+<pre>
+    (LEFT) + (RIGHT) - num_rows / num_distinct
+  = height_ramp + height_ramp * (X - min_x) / B 
+  + height_ramp - height_ramp * (X - min_x) / B
+  - num_rows / num_distinct 
+  = num_rows / num_distinct = 1000K.
+</pre>
+It's funny that just moving the equality from one extreme to the other can have such a big impact on the cardinality formula.
+</ul>
+<li> For ranges partially contained in the left band, and partially in the central region:
+<br> choose X = min_x + B
+<ul>
+<li> For x >  low_x and x <= high_x:
+<pre>
+ SQL> select x from t where x >  0.1 and x <= 6.4;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  3520K|    10M|  1447   (7)| 00:00:18 | (ORIGINAL)
+ |*  1 |  TABLE ACCESS FULL| T    |  3520K|    10M|  1447   (7)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x >  0.1 and x <  2.5;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |   960K|  2812K|  1436   (6)| 00:00:18 | (LEFT)
+ |*  1 |  TABLE ACCESS FULL| T    |   960K|  2812K|  1436   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x >= 2.5 and x <= 6.4;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  3560K|    10M|  1447   (7)| 00:00:18 | (CENTRAL)
+ |*  1 |  TABLE ACCESS FULL| T    |  3560K|    10M|  1447   (7)| 00:00:18 |
+ --------------------------------------------------------------------------
+ 960K + 3560K - 1000K = 3520K, as requested.
+</pre>
+Note that <b>the standard formula applies</b>:
+<br> 4000000 * (6.4 - 0.1) / (10-0) + 1000000 = 3520K.
+<li> For x >=  low_x and x < high_x:
+<pre>
+ SQL> select x from t where x >= 0.1 and x <  6.4;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  2560K|  7500K|  1443   (6)| 00:00:18 | (ORIGINAL)
+ |*  1 |  TABLE ACCESS FULL| T    |  2560K|  7500K|  1443   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x >= 0.1 and x <= 2.5;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  2000K|  5859K|  1440   (6)| 00:00:18 | (LEFT)
+ |*  1 |  TABLE ACCESS FULL| T    |  2000K|  5859K|  1440   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x >  2.5 and x <  6.4;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  1560K|  4570K|  1443   (6)| 00:00:18 | (CENTRAL)
+ |*  1 |  TABLE ACCESS FULL| T    |  1560K|  4570K|  1443   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ 2000K + 1560K - 1000K = 2560K, as requested.
+</pre>
+ Note that <b>the standard formula applies if you chop the "<=" extreme to the band boundary</b> (2.5):
+<br> 4000000 * (6.4 - <b>2.5</b>) / (10-0) + 1000000 = 2560K
+</ul>
+<li> For ranges partially contained in the left band, in the central region, and partially in the right band:
+<ul>
+<li> For x >  low_x and x <= high_x:
+<pre> 
+ SQL> select x from t where x >  0.1 and x <= 9.8;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  3960K|    11M|  1449   (7)| 00:00:18 | (ORIGINAL)
+ |*  1 |  TABLE ACCESS FULL| T    |  3960K|    11M|  1449   (7)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x >  0.1 and x <  2.5;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |   960K|  2812K|  1436   (6)| 00:00:18 | (LEFT)
+ |*  1 |  TABLE ACCESS FULL| T    |   960K|  2812K|  1436   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x >  2.5 and x <  7.5;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  2000K|  5859K|  1444   (7)| 00:00:18 | (CENTRAL)
+ |*  1 |  TABLE ACCESS FULL| T    |  2000K|  5859K|  1444   (7)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x >= 7.5 and x <= 9.8;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  2000K|  5859K|  1440   (6)| 00:00:18 | (RIGHT)
+ |*  1 |  TABLE ACCESS FULL| T    |  2000K|  5859K|  1440   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ 960K + 2000K + 2000K - 1000k = 3960K, as requested.
+</pre>
+ Note that <b>the standard formula applies if you chop the "<=" extreme to the band boundary</b> (7.5):
+<br> 4000000 * (<b>7.5</b> - 0.1) / (10-0) + 1000000 = 3960K
+<li> For x >=  low_x and x < high_x:
+<pre>
+ SQL> select x from t where x >= 0.1 and x <  9.8;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  3920K|    11M|  1449   (7)| 00:00:18 | (ORIGINAL)
+ |*  1 |  TABLE ACCESS FULL| T    |  3920K|    11M|  1449   (7)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x >= 0.1 and x <= 2.5;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  2000K|  5859K|  1440   (6)| 00:00:18 | (LEFT)
+ |*  1 |  TABLE ACCESS FULL| T    |  2000K|  5859K|  1440   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x >  2.5 and x <  7.5;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ -------------------------------------------------------------------------- 
+ |   0 | SELECT STATEMENT  |      |  2000K|  5859K|  1444   (7)| 00:00:18 | (CENTRAL)
+ |*  1 |  TABLE ACCESS FULL| T    |  2000K|  5859K|  1444   (7)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x >  7.5 and x <  9.8;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |   920K|  2695K|  1436   (6)| 00:00:18 | (RIGHT)
+ |*  1 |  TABLE ACCESS FULL| T    |   920K|  2695K|  1436   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ 2000K + 2000K + 920K - 1000k = 3920K, as requested.
+</pre>
+ Note that <b>the standard formula applies if you chop the ">=" extreme to the band boundary</b> (2.5):
+<br> 4000000 * (9.8 - <b>2.5</b>) / (10-0) + 1000000 = 3920K
+</ul>
+<li> Special case for x > low_x = min_x (or x < high_x = max_x for the right ramp):
+<pre>
+ SQL> select x from t where x > 0         and x <= 1;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |   400K|  1171K|  1437   (6)| 00:00:18 |
+ |*  1 |  TABLE ACCESS FULL| T    |   400K|  1171K|  1437   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x > 0 + 1e-12 and x <= 1;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  1400K|  4101K|  1437   (6)| 00:00:18 |
+ |*  1 |  TABLE ACCESS FULL| T    |  1400K|  4101K|  1437   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x > 0         and x <= 3;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  1200K|  3515K|  1441   (6)| 00:00:18 |
+ |*  1 |  TABLE ACCESS FULL| T    |  1200K|  3515K|  1441   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x > 0 + 1e-12 and x <= 3;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  2200K|  6445K|  1441   (6)| 00:00:18 |
+ |*  1 |  TABLE ACCESS FULL| T    |  2200K|  6445K|  1441   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x > 0         and x <= 9;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  3000K|  8789K|  1444   (7)| 00:00:18 |
+ |*  1 |  TABLE ACCESS FULL| T    |  3000K|  8789K|  1444   (7)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x > 0 + 1e-12 and x <= 9;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  4000K|    11M|  1449   (7)| 00:00:18 |
+ |*  1 |  TABLE ACCESS FULL| T    |  4000K|    11M|  1449   (7)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x > 0         and x < 10;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  2000K|  5859K|  1444   (7)| 00:00:18 |
+ |*  1 |  TABLE ACCESS FULL| T    |  2000K|  5859K|  1444   (7)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x > 0 + 1e-12 and x < 10-1e-12;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  4000K|    11M|  1449   (7)| 00:00:18 |
+ |*  1 |  TABLE ACCESS FULL| T    |  4000K|    11M|  1449   (7)| 00:00:18 |
+ --------------------------------------------------------------------------
+</pre>
+The rule seems to be "compute as normal, then subtract num_rows/num_distinct for each range extreme matching the corresponding interval extreme".
+<li>Note that for x <b>>=</b> low_x = min_x instead, we don't see anything special:
+<pre>
+ SQL> select x from t where x >= 0         and x <= 1;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  1400K|  4101K|  1437   (6)| 00:00:18 |
+ |*  1 |  TABLE ACCESS FULL| T    |  1400K|  4101K|  1437   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x >= 0 + 1e-12 and x <= 1;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  1400K|  4101K|  1437   (6)| 00:00:18 |
+ |*  1 |  TABLE ACCESS FULL| T    |  1400K|  4101K|  1437   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+</pre>
+</ul>
+
+Let's move to the <a href="range_sel_conclusion.html">conclusion</a>.
+
+<br><br>
+<i>For corrections / feedback:<br>
+alberto.dellera@gmail.com</i>
+<br><br>
+
+<!-- Start of StatCounter Code -->
+<script type="text/javascript" language="javascript">
+var sc_project=2420231; 
+var sc_invisible=1; 
+var sc_partition=23; 
+var sc_security="d66786aa"; 
+var sc_text=2; 
+</script>
+
+<script type="text/javascript" language="javascript" src="http://www.statcounter.com/counter/counter.js"></script><noscript><a href="http://www.statcounter.com/" target="_blank"><img  src="http://c24.statcounter.com/counter.php?sc_project=2420231&java=0&security=d66786aa&invisible=0" alt="site stats" border="0"></a> </noscript>
+<!-- End of StatCounter Code -->
+
+</body></html>
+

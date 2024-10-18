@@ -1,0 +1,300 @@
+SQL> 
+SQL> col value form 99.9
+SQL> 
+SQL> -- some views to format dba_histograms for our example tables
+SQL> create or replace view formatted_hist_t1 as
+  2  with hist1 as (
+  3    select endpoint_number ep, endpoint_value value
+  4  	 from user_histograms
+  5  	where table_name  = 'T1'
+  6  	  and column_name = 'VALUE'
+  7  ), hist2 as (
+  8    select ep, value,
+  9  	      lag (ep) over (order by ep) prev_ep,
+ 10  	      max (ep) over ()		  max_ep
+ 11  	 from hist1
+ 12  )
+ 13  select value, ep,
+ 14  	    (select num_rows from user_tables where table_name	= 'T1')
+ 15  	    * (ep - nvl (prev_ep, 0))
+ 16  	    / max_ep as counts,
+ 17  	    decode (ep - nvl (prev_ep, 0), 0, 0, 1, 0, 1) as popularity
+ 18   from hist2
+ 19  order by ep;
+
+View created.
+
+SQL> 
+SQL> create or replace view formatted_hist_t2 as
+  2  with hist1 as (
+  3    select endpoint_number ep, endpoint_value value
+  4  	 from user_histograms
+  5  	where table_name  = 'T2'
+  6  	  and column_name = 'VALUE'
+  7  ), hist2 as (
+  8    select ep, value,
+  9  	      lag (ep) over (order by ep) prev_ep,
+ 10  	      max (ep) over ()		  max_ep
+ 11  	 from hist1
+ 12  )
+ 13  select value, ep,
+ 14  	    (select num_rows from user_tables where table_name	= 'T2')
+ 15  	    * (ep - nvl (prev_ep, 0))
+ 16  	    / max_ep as counts,
+ 17  	    decode (ep - nvl (prev_ep, 0), 0, 0, 1, 0, 1) as popularity
+ 18   from hist2
+ 19  order by ep;
+
+View created.
+
+SQL> 
+SQL> -- table t1 with its Height-Based histogram collected
+SQL> create table t1 (value number);
+
+Table created.
+
+SQL> insert into t1(value) values (20  );
+
+1 row created.
+
+SQL> insert into t1(value) values (20  );
+
+1 row created.
+
+SQL> insert into t1(value) values (20.5);
+
+1 row created.
+
+SQL> insert into t1(value) values (40  );
+
+1 row created.
+
+SQL> insert into t1(value) values (40.5);
+
+1 row created.
+
+SQL> insert into t1(value) values (50  );
+
+1 row created.
+
+SQL> insert into t1(value) values (50.5);
+
+1 row created.
+
+SQL> insert into t1(value) values (60  );
+
+1 row created.
+
+SQL> insert into t1(value) select  70 from dual connect by level <= 4;
+
+4 rows created.
+
+SQL> 
+SQL> exec dbms_stats.gather_table_stats (user, 't1', method_opt=>'for all columns size 6', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> select value from t1 order by value;
+
+VALUE                                                                                                                                                 
+-----                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.5                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.5                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.5                                                                                                                                                 
+ 60.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+
+12 rows selected.
+
+SQL> select * from formatted_hist_t1;
+
+VALUE         EP     COUNTS POPULARITY                                                                                                                
+----- ---------- ---------- ----------                                                                                                                
+ 20.0          1          2          0                                                                                                                
+ 40.0          2          2          0                                                                                                                
+ 50.0          3          2          0                                                                                                                
+ 60.0          4          2          0                                                                                                                
+ 70.0          6          4          1                                                                                                                
+
+SQL> 
+SQL> -- table t2 with its Frequency histogram collected
+SQL> create table t2 (value number);
+
+Table created.
+
+SQL> insert into t2(value) values (10);
+
+1 row created.
+
+SQL> insert into t2(value) select  30 from dual connect by level <= 2;
+
+2 rows created.
+
+SQL> insert into t2(value) values (50);
+
+1 row created.
+
+SQL> insert into t2(value) select  60 from dual connect by level <= 4;
+
+4 rows created.
+
+SQL> insert into t2(value) select  70 from dual connect by level <= 2;
+
+2 rows created.
+
+SQL> insert into t2(value) select  80 from dual connect by level <= 2;
+
+2 rows created.
+
+SQL> insert into t2(value) values (90);
+
+1 row created.
+
+SQL> insert into t2(value) values (99);
+
+1 row created.
+
+SQL> 
+SQL> exec dbms_stats.gather_table_stats (user, 't2', method_opt=>'for all columns size 254', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> select value from t2 order by value;
+
+VALUE                                                                                                                                                 
+-----                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 60.0                                                                                                                                                 
+ 60.0                                                                                                                                                 
+ 60.0                                                                                                                                                 
+ 60.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 80.0                                                                                                                                                 
+ 80.0                                                                                                                                                 
+ 90.0                                                                                                                                                 
+ 99.0                                                                                                                                                 
+
+14 rows selected.
+
+SQL> select * from formatted_hist_t2;
+
+VALUE         EP     COUNTS POPULARITY                                                                                                                
+----- ---------- ---------- ----------                                                                                                                
+ 10.0          1          1          0                                                                                                                
+ 30.0          3          2          1                                                                                                                
+ 50.0          4          1          0                                                                                                                
+ 60.0          8          4          1                                                                                                                
+ 70.0         10          2          1                                                                                                                
+ 80.0         12          2          1                                                                                                                
+ 90.0         13          1          0                                                                                                                
+ 99.0         14          1          0                                                                                                                
+
+8 rows selected.
+
+SQL> 
+SQL> -- uncomment the following two lines if you want to magnify all the contributors
+SQL> -- with the exception of "populars matching populars"
+SQL> -- You need of course to install the set_density package
+SQL> --exec set_density ('t1', 'value', 100);
+SQL> --exec set_density ('t2', 'value', 100);
+SQL> 
+SQL> -- table statistics
+SQL> col table_name form a5
+SQL> select t.table_name, t.num_rows, c.density, t.num_rows * c.density "num_rows*density", t.num_rows / c.num_distinct
+  2    from user_tables t, user_tab_columns c
+  3   where t.table_name = c.table_name
+  4  	and t.table_name in ('T1','T2')
+  5  	and c.column_name = 'VALUE'
+  6    order by table_name;
+
+TABLE   NUM_ROWS    DENSITY num_rows*density T.NUM_ROWS/C.NUM_DISTINCT                                                                                
+----- ---------- ---------- ---------------- -------------------------                                                                                
+T1            12 .104166667             1.25                       1.5                                                                                
+T2            14 .035714286               .5                      1.75                                                                                
+
+SQL> 
+SQL> -- The Join Histogram
+SQL> create or replace view join_histogram as
+  2  select decode (lhs.popularity, 1, 'POP', 0, 'UN', '-') as lhs_popularity,
+  3  	    nvl(to_char(lhs.counts),'-')		    as lhs_counts,
+  4  	    nvl(lhs.value, rhs.value)			    as value,
+  5  	    nvl(to_char(rhs.counts),'-')		    as rhs_counts,
+  6  	    decode (rhs.popularity, 1, 'POP', 0, 'UN', '-') as rhs_popularity,
+  7  	    nvl(lhs.popularity,0) + nvl(rhs.popularity,0)   as join_popularity
+  8   from (select * from formatted_hist_t1) lhs -- select * necessary for "table does not exist" workaround
+  9  	   full outer join
+ 10  	   (select * from formatted_hist_t2) rhs -- select * necessary for "table does not exist" workaround
+ 11  	on (lhs.value = rhs.value)
+ 12  order by nvl(lhs.value, rhs.value);
+
+View created.
+
+SQL> 
+SQL> col lhs_popularity form a3
+SQL> col lhs_counts	form a5
+SQL> col value		form 99
+SQL> col rhs_counts	form a5
+SQL> col rhs_popularity form a3
+SQL> select * from join_histogram;
+
+LHS LHS_C VALUE RHS_C RHS JOIN_POPULARITY                                                                                                             
+--- ----- ----- ----- --- ---------------                                                                                                             
+-   -        10 1     UN                0                                                                                                             
+UN  2        20 -     -                 0                                                                                                             
+-   -        30 2     POP               1                                                                                                             
+UN  2        40 -     -                 0                                                                                                             
+UN  2        50 1     UN                0                                                                                                             
+UN  2        60 4     POP               1                                                                                                             
+POP 4        70 2     POP               2                                                                                                             
+-   -        80 2     POP               1                                                                                                             
+-   -        90 1     UN                0                                                                                                             
+-   -        99 1     UN                0                                                                                                             
+
+10 rows selected.
+
+SQL> 
+SQL> -- uncomment the following two lines if you want to calculate the contributors
+SQL> -- using the formula implemented in pl/sql and sql
+SQL> -- You need of course to install the join_over_histograms package
+SQL> -- workaround for bug 4626732, 5752903 "ORA-07445 [ACCESS_VIOLATION] [_evaopn2+153]"
+SQL> -- alter session set "_optimizer_native_full_outer_join"=force;
+SQL> -- select join_over_histograms.get ('t1', 'value', 't2', 'value') from dual;
+SQL> 
+SQL> set autotrace traceonly explain
+SQL> select count(*)
+  2    from t1, t2
+  3   where t1.value = t2.value;
+
+Execution Plan
+----------------------------------------------------------                                                                                            
+Plan hash value: 906334482                                                                                                                            
+                                                                                                                                                      
+----------------------------------------------------------------------------                                                                          
+| Id  | Operation           | Name | Rows  | Bytes | Cost (%CPU)| Time     |                                                                          
+----------------------------------------------------------------------------                                                                          
+|   0 | SELECT STATEMENT    |      |     1 |     6 |     7  (15)| 00:00:01 |                                                                          
+|   1 |  SORT AGGREGATE     |      |     1 |     6 |            |          |                                                                          
+|*  2 |   HASH JOIN         |      |    16 |    96 |     7  (15)| 00:00:01 |                                                                          
+|   3 |    TABLE ACCESS FULL| T1   |    12 |    36 |     3   (0)| 00:00:01 |                                                                          
+|   4 |    TABLE ACCESS FULL| T2   |    14 |    42 |     3   (0)| 00:00:01 |                                                                          
+----------------------------------------------------------------------------                                                                          
+                                                                                                                                                      
+Predicate Information (identified by operation id):                                                                                                   
+---------------------------------------------------                                                                                                   
+                                                                                                                                                      
+   2 - access("T1"."VALUE"="T2"."VALUE")                                                                                                              
+
+SQL> set autotrace off
+SQL> 
+SQL> spool off

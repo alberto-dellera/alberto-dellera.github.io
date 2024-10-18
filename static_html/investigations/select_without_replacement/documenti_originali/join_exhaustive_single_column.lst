@@ -1,0 +1,425 @@
+SQL> 
+SQL> -- end of initialization section
+SQL> 
+SQL> set echo on
+SQL> 
+SQL> drop table results;
+
+Table dropped.
+
+SQL> create table results (
+  2    num_rows_t1          int    not null,
+  3    num_rows_t2          int    not null,
+  4    num_distinct_t1_x    int    not null,
+  5    num_distinct_t2_x    int    not null,
+  6    f_num_rows_t1        number not null,
+  7    f_num_rows_t2        number not null,
+  8    f_num_distinct_t1_x  number not null,
+  9    f_num_distinct_t1_2  number not null,
+ 10    cbo_card             number not null,
+ 11    frm_card             number not null,
+ 12    sel                  number not null
+ 13  );
+
+Table created.
+
+SQL> 
+SQL> drop table t1;
+
+Table dropped.
+
+SQL> drop table t2;
+
+Table dropped.
+
+SQL> 
+SQL> purge recyclebin;
+purge recyclebin
+*
+ERROR at line 1:
+ORA-00900: invalid SQL statement
+
+
+SQL> 
+SQL> -- max 250
+SQL> define num_rows_t1=100
+SQL> -- max 250
+SQL> define num_rows_t2=100
+SQL> 
+SQL> create table t1 as
+  2  select 100000 x, rownum filter from dual connect by level <= &num_rows_t1. ;
+
+Table created.
+
+SQL> 
+SQL> create table t2 as
+  2  select 100000 x, rownum filter from dual connect by level <= &num_rows_t2. ;
+
+Table created.
+
+SQL> 
+SQL> -- collect baseline stats, build an histogram on the "filter" column
+SQL> exec dbms_stats.gather_table_stats (user, 't1', cascade=>true, method_opt => 'for columns x size 1, columns filter size 254', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> exec dbms_stats.gather_table_stats (user, 't2', cascade=>true, method_opt => 'for columns x size 1, columns filter size 254', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> 
+SQL> drop sequence get_cbo_card_seq;
+
+Sequence dropped.
+
+SQL> create sequence get_cbo_card_seq;
+
+Sequence created.
+
+SQL> 
+SQL> alter system flush shared_pool;
+
+System altered.
+
+SQL> 
+SQL> -- this procedure parses the statement, and fetches the relevant CBO cardinality
+SQL> -- estimates from v$sql_plan
+SQL> create or replace procedure get_cbo_card (
+  2    p_desired_f_num_rows_t1 number,
+  3    p_desired_f_num_rows_t2 number,
+  4    p_cbo_card              out number,
+  5    p_f_num_rows_t1         out number,
+  6    p_f_num_rows_t2         out number
+  7  )
+  8  is
+  9    l_stmt long;
+ 10    l_cursor sys_refcursor;
+ 11    l_seq_val int;
+ 12    l_address      v$sql.address%type;
+ 13    l_hash_value   v$sql.hash_value%type;
+ 14    l_child_number v$sql.child_number%type;
+ 15    l_filter_pred_t1   varchar2 (1000);
+ 16    l_filter_pred_t2   varchar2 (1000);
+ 17  
+ 18    function calc_filter_pred (p_desired_f_num_rows int)
+ 19    return varchar2
+ 20    is
+ 21    begin
+ 22      if p_desired_f_num_rows > 250 then
+ 23        raise_application_error (-20001, 'cannot produce desired filtered card for p_desired_f_num_rows='||p_desired_f_num_rows);
+ 24      end if;
+ 25  
+ 26      if p_desired_f_num_rows = 1 then
+ 27        return '<= 1';
+ 28      else
+ 29       return '< '||p_desired_f_num_rows;
+ 30      end if;
+ 31    end;
+ 32  begin
+ 33    l_filter_pred_t1 := calc_filter_pred (p_desired_f_num_rows_t1);
+ 34    l_filter_pred_t2 := calc_filter_pred (p_desired_f_num_rows_t2);
+ 35  
+ 36    select get_cbo_card_seq.nextval into l_seq_val from dual;
+ 37    l_stmt := 'select /*+ get_cbo_card_tag '|| l_seq_val || ' */  t1.*, t2.* '
+ 38           || ' from t1, t2 '
+ 39           || 'where t1.x = t2.x '
+ 40           || '  and t1.filter '||l_filter_pred_t1
+ 41           || '  and t2.filter '||l_filter_pred_t2;
+ 42  
+ 43    --dbms_output.put_line (  l_stmt );
+ 44  
+ 45    open l_cursor for l_stmt;
+ 46    close l_cursor;
+ 47  
+ 48    select address, hash_value, child_number
+ 49      into l_address, l_hash_value, l_child_number
+ 50      from v$sql
+ 51     where sql_text = l_stmt
+ 52       and rownum = 1;
+ 53  
+ 54    for r in (select operation, object_name, cardinality, options
+ 55                from v$sql_plan
+ 56               where address      = l_address
+ 57                 and hash_value   = l_hash_value
+ 58                 and child_number = l_child_number
+ 59                 and id > 0)
+ 60    loop
+ 61      -- dbms_output.put_line ('"'||r.operation||'" - "'||r.options||'"');
+ 62      if r.operation like ('%JOIN') then
+ 63        p_cbo_card := r.cardinality;
+ 64      elsif r.operation in ('TABLE ACCESS') then
+ 65        if r.object_name = 'T1' then
+ 66          p_f_num_rows_t1 := r.cardinality;
+ 67        elsif r.object_name = 'T2' then
+ 68          p_f_num_rows_t2 := r.cardinality;
+ 69        end if;
+ 70      end if;
+ 71    end loop;
+ 72  
+ 73    if p_desired_f_num_rows_t1 != p_f_num_rows_t1 then
+ 74      raise_application_error (-20002, 'cannot produce desired f_num_rows='||p_desired_f_num_rows_t1||' p_f_num_rows='||p_f_num_rows_t1);
+ 75    end if;
+ 76  
+ 77    if p_desired_f_num_rows_t2 != p_f_num_rows_t2 then
+ 78      raise_application_error (-20003, 'cannot produce desired f_num_rows='||p_desired_f_num_rows_t2||' p_f_num_rows='||p_f_num_rows_t2);
+ 79    end if;
+ 80  
+ 81  end get_cbo_card;
+ 82  /
+
+Procedure created.
+
+SQL> show errors
+No errors.
+SQL> 
+SQL> alter system flush shared_pool;
+
+System altered.
+
+SQL> 
+SQL> create or replace procedure test
+  2  is
+  3    l_cbo_card number;
+  4    l_f_num_rows_t1 number;
+  5    l_f_num_rows_t2 number;
+  6    l_cbo_card_lower number;
+  7    l_num_distinct_t1_x number;
+  8    l_num_distinct_t2_x number;
+  9    l_num_rows_t1 number;
+ 10    l_num_rows_t2 number;
+ 11    l_frm_card number;
+ 12    l_f_num_distinct_t1_x number;
+ 13    l_f_num_distinct_t1_2 number;
+ 14    l_num_test int := 0;
+ 15    l_sel number;
+ 16    l_desired_num_distinct_t1_x number := null;
+ 17    l_desired_num_distinct_t2_x number := null;
+ 18    l_desired_f_num_rows_t1 number := null;
+ 19    l_desired_f_num_rows_t2 number := null;
+ 20  
+ 21    function get_next (p_curr number, p_min number, p_max number, p_step number)
+ 22    return number
+ 23    is
+ 24      l_ret number;
+ 25    begin
+ 26      if p_curr is null then return p_min; end if;
+ 27      if p_curr = p_max then return null;  end if;
+ 28      l_ret := p_curr + p_step;
+ 29      if l_ret > p_max then return p_max; else return l_ret; end if;
+ 30    end get_next;
+ 31  
+ 32    procedure set_column_data (p_table varchar2, p_column varchar2, p_desired_num_distinct varchar2)
+ 33    is
+ 34      l_distribution_type varchar2(10 char) := 'mod';
+ 35      l_perfect_overlap   varchar2(1 char) := 'N';
+ 36    begin
+ 37      if l_distribution_type = 'random' then
+ 38        execute immediate 'update '||p_table||' set '||p_column||'= trunc(dbms_random.value(0,'||p_desired_num_distinct||'))';
+ 39        execute immediate 'update '||p_table||' set '||p_column||'= rownum-1 where rownum <= '|| p_desired_num_distinct;
+ 40        if l_perfect_overlap = 'Y' then
+ 41          execute immediate 'update '||p_table||' set '||p_column||'= 1e5 where  '||p_column||'= '|| (p_desired_num_distinct-1);
+ 42        end if;
+ 43      elsif l_distribution_type = 'mod' then
+ 44        execute immediate 'update '||p_table||' set '||p_column||'= least (rownum-1, '||(p_desired_num_distinct-1)||')';
+ 45        if l_perfect_overlap = 'Y' then
+ 46          execute immediate 'update '||p_table||' set '||p_column||'= 1e5 where  '||p_column||'= '|| (p_desired_num_distinct-1);
+ 47        end if;
+ 48      end if;
+ 49  
+ 50    end set_column_data;
+ 51  begin
+ 52    dbms_random.seed (0);
+ 53  
+ 54    select num_rows
+ 55      into l_num_rows_t1
+ 56      from user_tables
+ 57     where table_name = 'T1';
+ 58  
+ 59     select num_rows
+ 60      into l_num_rows_t2
+ 61      from user_tables
+ 62     where table_name = 'T2';
+ 63  
+ 64    loop
+ 65      l_desired_num_distinct_t1_x := get_next (l_desired_num_distinct_t1_x, 2, l_num_rows_t1, trunc(l_num_rows_t1/10));
+ 66      exit when l_desired_num_distinct_t1_x is null;
+ 67  
+ 68      set_column_data ('t1', 'x', l_desired_num_distinct_t1_x);
+ 69  
+ 70      -- refresh statistics of column "t1.x"
+ 71      dbms_stats.gather_table_stats (user, 't1', cascade => true, method_opt => 'for columns x size 1', estimate_percent => 100);
+ 72  
+ 73      select num_distinct
+ 74        into l_num_distinct_t1_x
+ 75        from user_tab_columns
+ 76       where table_name = 'T1'
+ 77         and column_name = 'X';
+ 78  
+ 79      loop
+ 80        l_desired_num_distinct_t2_x := get_next (l_desired_num_distinct_t2_x, 2, l_num_rows_t2, trunc(l_num_rows_t2/10));
+ 81        exit when l_desired_num_distinct_t2_x is null;
+ 82  
+ 83        set_column_data ('t2', 'x', l_desired_num_distinct_t2_x);
+ 84        -- partial overlaps of range intervals for t1.x and t2.1
+ 85        -- this makes no difference (tested for paper)
+ 86        -- update t2 set x = x + l_desired_num_distinct_t1_x - 1;
+ 87  
+ 88        -- refresh statistics of column "t2.x"
+ 89        dbms_stats.gather_table_stats (user, 't2', cascade => true, method_opt => 'for columns x size 1', estimate_percent => 100);
+ 90  
+ 91        select num_distinct
+ 92          into l_num_distinct_t2_x
+ 93          from user_tab_columns
+ 94         where table_name = 'T2'
+ 95           and column_name = 'X';
+ 96  
+ 97        loop
+ 98          l_desired_f_num_rows_t1 := get_next (l_desired_f_num_rows_t1, 1, l_num_rows_t1, trunc(l_num_rows_t1/5));
+ 99          exit when l_desired_f_num_rows_t1 is null;
+100  
+101          loop
+102            l_desired_f_num_rows_t2 := get_next (l_desired_f_num_rows_t2, 1, l_num_rows_t2, 1);
+103            exit when l_desired_f_num_rows_t2 is null;
+104  
+105            get_cbo_card (l_desired_f_num_rows_t1, l_desired_f_num_rows_t2, l_cbo_card,
+106                          l_f_num_rows_t1, l_f_num_rows_t2);
+107  
+108            l_f_num_distinct_t1_x := yao ( l_num_distinct_t1_x, l_f_num_rows_t1, l_num_rows_t1 );
+109            l_f_num_distinct_t1_2 := yao ( l_num_distinct_t2_x, l_f_num_rows_t2, l_num_rows_t2 );
+110  
+111            l_sel := 1 / ceil ( greatest ( l_f_num_distinct_t1_x, l_f_num_distinct_t1_2 ) );
+112  
+113            -- special case: both num_distinct = 1 => sel = 1
+114            if l_num_distinct_t1_x = 1 or l_num_distinct_t2_x = 1 then
+115              if l_num_distinct_t1_x = 1 and l_num_distinct_t2_x = 1 then
+116                l_sel := 1;
+117              end if;
+118            end if;
+119  
+120            l_frm_card := l_f_num_rows_t1 * l_f_num_rows_t2 * l_sel;
+121  
+122            -- CBO round()s the final card
+123            if 1=1 then
+124              l_frm_card := round (l_frm_card);
+125              if l_frm_card < 1 then
+126                l_frm_card := 1;
+127              end if;
+128            end if;
+129  
+130            -- lower bound: least of filtered cardinalities
+131            -- it doesn't seem to make any difference with the latest refinements
+132            /*
+133            l_cbo_card_lower := least (l_f_num_rows_t1, l_f_num_rows_t2);
+134  
+135            if l_frm_card < l_cbo_card_lower then
+136              l_frm_card := l_cbo_card_lower;
+137            end if;
+138            */
+139  
+140            insert into results (num_rows_t1, num_rows_t2, num_distinct_t1_x, num_distinct_t2_x,
+141                                 f_num_distinct_t1_x, f_num_distinct_t1_2, f_num_rows_t1, f_num_rows_t2,
+142                                 cbo_card, frm_card, sel)
+143              values (l_num_rows_t1, l_num_rows_t2, l_num_distinct_t1_x, l_num_distinct_t2_x,
+144                      l_f_num_distinct_t1_x, l_f_num_distinct_t1_2, l_f_num_rows_t1, l_f_num_rows_t2,
+145                      l_cbo_card, l_frm_card, l_sel );
+146            commit;
+147  
+148            l_num_test := l_num_test + 1;
+149            if mod (l_num_test, 121) = 0 then
+150              execute immediate 'alter system flush shared_pool';
+151            end if;
+152  
+153          end loop;
+154  
+155        end loop;
+156      end loop;
+157    end loop;
+158  end;
+159  /
+
+Procedure created.
+
+SQL> show errors;
+No errors.
+SQL> 
+SQL> exec test;
+
+PL/SQL procedure successfully completed.
+
+SQL> 
+SQL> --alter session set events '10053 trace name context forever, level 1';
+SQL> 
+SQL> --alter session set events '10053 trace name context off';
+SQL> 
+SQL> col num_rows_t1 head "nr_t1" form 999
+SQL> col num_rows_t2 head "nr_t2" form 999
+SQL> col f_num_rows_t1 head "fnr_t1" form 999
+SQL> col f_num_rows_t2 head "fnr_t2" form 999
+SQL> col num_distinct_t1_x head "nd_t1_x" form 9999
+SQL> col num_distinct_t2_x head "nd_t2_x" form 9999
+SQL> col f_num_distinct_t1_x head "fnd_t1_x" form 99.9999999999
+SQL> col f_num_distinct_t1_2 head "fnd_t2_x" form 99.9999999999
+SQL> col sel form 99.99999
+SQL> --select r.*, cbo_card / frm_card from results r where abs (cbo_card - frm_card) > 1 order by 1,2,3,4,7,8;
+SQL> 
+SQL> select avg ( cbo_card - round(frm_card) ), stddev ( cbo_card - round(frm_card) ),
+  2         avg ( abs( cbo_card - round(frm_card) ) ), stddev ( abs ( cbo_card - round(frm_card) ) ) from results;
+
+AVG(CBO_CARD-ROUND(FRM_CARD)) STDDEV(CBO_CARD-ROUND(FRM_CARD)) AVG(ABS(CBO_CARD-ROUND(FRM_CARD))) STDDEV(ABS(CBO_CARD-ROUND(FRM_CARD)))
+----------------------------- -------------------------------- ---------------------------------- -------------------------------------
+                   .058168044                       .456383626                         .064449036                            .455539073
+
+1 row selected.
+
+SQL> 
+SQL> -- note: percentage of error has frm_card as denominator
+SQL> select avg ( 100 * abs (cbo_card - round(frm_card)) / round(frm_card) ) perc_error,
+  2         stddev ( 100 * abs (cbo_card - round(frm_card)) / round(frm_card) ) from results;
+
+PERC_ERROR STDDEV(100*ABS(CBO_CARD-ROUND(FRM_CARD))/ROUND(FRM_CARD))
+---------- ---------------------------------------------------------
+.157086477                                                1.93328897
+
+1 row selected.
+
+SQL> 
+SQL> -- test exact formula
+SQL> col perc form 99.99
+SQL> col perc_cum form 999.99
+SQL> select r2.*, trunc (100 * cnt_ratio, 2) as perc,
+  2               trunc (100 * sum(cnt_ratio) over (order by abs_error), 2) as perc_cum
+  3    from (
+  4  select r.*, ratio_to_report (cnt) over() cnt_ratio
+  5    from (
+  6  select round (abs (cbo_card - round(frm_card)), 1) as abs_error, count(*) cnt
+  7    from results
+  8   group by round (abs (cbo_card - round(frm_card)), 1)
+  9         ) r
+ 10         ) r2
+ 11   order by 1;
+
+ ABS_ERROR        CNT  CNT_RATIO   PERC PERC_CUM
+---------- ---------- ---------- ------ --------
+         0      69991 .964063361  96.40    96.40
+         1       1681  .02315427   2.31    98.72
+         2        483 .006652893    .66    99.38
+         3        177 .002438017    .24    99.63
+         4        116 .001597796    .15    99.79
+         5         76 .001046832    .10    99.89
+         6         22  .00030303    .03    99.92
+         7         17  .00023416    .02    99.94
+         8          6 .000082645    .00    99.95
+         9         11 .000151515    .01    99.97
+        10          5 .000068871    .00    99.97
+        11          3 .000041322    .00    99.98
+        12          3 .000041322    .00    99.98
+        13          1 .000013774    .00    99.98
+        14          3 .000041322    .00    99.99
+        15          1 .000013774    .00    99.99
+        17          3 .000041322    .00    99.99
+        19          1 .000013774    .00   100.00
+
+18 rows selected.
+
+SQL> 
+SQL> spool off

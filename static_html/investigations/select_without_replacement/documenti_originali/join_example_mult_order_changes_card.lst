@@ -1,0 +1,105 @@
+SQL> 
+SQL> -- this is to prevent the 10g "multi-column join key sanity check" from masking the bug
+SQL> alter session set "_optimizer_join_sel_sanity_check"=false;
+
+Session altered.
+
+SQL> 
+SQL> --alter session set events '10053 trace name context forever, level 1';
+SQL> set autotrace traceonly explain
+SQL> 
+SQL> prompt x first; card = 781 = 100 * 10000 / 64 / 20 [considers F_NUM_DISTINCT (t2.x) = 64 (rounded) ]
+x first; card = 781 = 100 * 10000 / 64 / 20 [considers F_NUM_DISTINCT (t2.x) = 64 (rounded) ]
+SQL> 
+SQL> select
+  2          t1.v1, t2.v1
+  3  from
+  4          t1, t2
+  5  where   t2.x = t1.x
+  6  and     t2.y = t1.y
+  7  -- and  t1.filter = 10
+  8  and     t2.filter = 10
+  9  ;
+
+Execution Plan
+----------------------------------------------------------
+   0      SELECT STATEMENT Optimizer=ALL_ROWS (Cost=41 Card=781 Bytes=29678)
+   1    0   HASH JOIN (Cost=41 Card=781 Bytes=29678)
+   2    1     TABLE ACCESS (FULL) OF 'T2' (Cost=20 Card=100 Bytes=2100)
+   3    1     TABLE ACCESS (FULL) OF 'T1' (Cost=20 Card=10000 Bytes=170000)
+
+
+
+SQL> 
+SQL> 
+SQL> doc
+SQL> 
+SQL> prompt y first; card = 562 = 100 * 10000 / 89 / 20 [considers F_NUM_DISTINCT (t2.y) = 89 (rounded) ]
+y first; card = 562 = 100 * 10000 / 89 / 20 [considers F_NUM_DISTINCT (t2.y) = 89 (rounded) ]
+SQL> 
+SQL> select
+  2          t1.v1, t2.v1
+  3  from
+  4          t1, t2
+  5  where   t2.y = t1.y --swap
+  6  and     t2.x = t1.x --swap
+  7  -- and  t1.filter = 10
+  8  and     t2.filter = 10
+  9  ;
+
+Execution Plan
+----------------------------------------------------------
+   0      SELECT STATEMENT Optimizer=ALL_ROWS (Cost=41 Card=562 Bytes=21356)
+   1    0   HASH JOIN (Cost=41 Card=562 Bytes=21356)
+   2    1     TABLE ACCESS (FULL) OF 'T2' (Cost=20 Card=100 Bytes=2100)
+   3    1     TABLE ACCESS (FULL) OF 'T1' (Cost=20 Card=10000 Bytes=170000)
+
+
+
+SQL> 
+SQL> doc
+SQL> 
+SQL> set autotrace off
+SQL> alter session set events '10053 trace name context off';
+
+Session altered.
+
+SQL> 
+SQL> select t.table_name, c.column_name, c.num_distinct,
+  2         swru ( c.num_distinct, decode (c.table_name, 'T2', 100, t.num_rows), t.num_rows ) f_num_distinct
+  3   from user_tab_columns c, user_tables t
+  4   where t.table_name in ('T1','T2')
+  5     and t.table_name = c.table_name
+  6     and c.column_name in ('X', 'Y')
+  7   order by table_name, column_name;
+
+TABLE_NAME           COLUMN_NAME          NUM_DISTINCT F_NUM_DISTINCT
+-------------------- -------------------- ------------ --------------
+T1                   X                              20             20
+T1                   Y                              20             20
+T2                   X                             100     63.5805485
+T2                   Y                             390     88.6905667
+
+4 rows selected.
+
+SQL> 
+SQL> select 'T1' table_name, min(x), max (x), min (y), max (y) from t1;
+
+TABLE_NAME               MIN(X)     MAX(X)     MIN(Y)     MAX(Y)
+-------------------- ---------- ---------- ---------- ----------
+T1                            0         19          0         19
+
+1 row selected.
+
+SQL> select 'T2' table_name, min(x), max (x), min (y), max (y) from t2;
+
+TABLE_NAME               MIN(X)     MAX(X)     MIN(Y)     MAX(Y)
+-------------------- ---------- ---------- ---------- ----------
+T2                            0         99          0        389
+
+1 row selected.
+
+SQL> 
+SQL> doc
+SQL> 
+SQL> spool off

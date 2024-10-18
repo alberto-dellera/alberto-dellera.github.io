@@ -1,0 +1,180 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head><title>CBO: (closed) range predicate cardinality</title>
+</head><body>
+
+Now we'll repeat the same steps we made for (bounded, open) ranges, but changing the template to
+<pre>
+select x from t where x >= low_x and x <= low_x + w
+</pre>
+i.e. we'll move to the (bounded, closed) case.
+<br>
+<br><b>Selection over an infinitesimal range</b>
+<br>
+<br>The "infinitesimal" range case is covered by the script <a href="range_sel_closed_inf.sql">range_sel_closed_inf.sql</a>, which produces the <a href="range_sel_closed_inf_02_data.dat">red</a> (num_distinct=2), <a href="range_sel_closed_inf_03_data.dat">green</a> (num_distinct=3) and 
+<a href="range_sel_closed_inf_04_data.dat">blue</a> (num_distinct=4) line data for this graph:
+<br>
+<img src="range_sel_closed_inf_data.jpeg">
+<br>
+Deductions (again, the ones labeled by [JLB] are already discussed in Jonathan Lewis' Book "<a href="http://www.jlcomp.demon.co.uk/cbo_book/ind_book.html#addenda">Cost Based Oracle</a>"):
+<ul>
+<li> The specular simmetry around the midinterval point 5.0 = (max_x - min_x) / 2 holds for this case also [JLB];
+<li> There's the same flat region at the center, surrounded by the same two lateral bands (ramps) whose width is B = (max_x - min_x) / num_distinct [JLB];
+<li> For ranges completely contained in the central flat region, the cardinality honours the standard formula, that for closed ranges has to be modified to (changes underlined):
+ <pre>
+ cardinality = num_rows * w / (max_x - min_x) <u>+ 2 * num_rows / num_distinct</u>
+ </pre>[JLB]
+<li> For ranges completely contained in the lateral bands:
+<ul>
+ <li>the cardinality <b>does not depend on w</b>  but depends only on the value of high_x = low_x + w for the left ramp 
+ <br>(and for symmetry, of low_x for the right ramp). Note that in the case of open ranges, it depended on low_x, not high_x (and high_x for the right ramp); the role of range extremata has swapped.
+ <br>
+ <br>In fact (for num_distinct=4):
+ <pre>
+ SQL> select x from t where x >= 2 - 0.001 and x <= 2;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  1800K|  5273K|  1439   (6)| 00:00:18 |
+ |*  1 |  TABLE ACCESS FULL| T    |  1800K|  5273K|  1439   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+
+ SQL> select x from t where x >= 2 - 2     and x <= 2;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  1800K|  5273K|  1439   (6)| 00:00:18 |
+ |*  1 |  TABLE ACCESS FULL| T    |  1800K|  5273K|  1439   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ </pre>
+ <li> the cardinality formula (for the left ramp) is (changes underlined):
+ <pre>
+ let B  = (max_x - min_x) / num_distinct
+ let height_ramp = num_rows / num_distinct 
+ cardinality = height_ramp <u> + </u> height_ramp * (<u>high_x</u> - min_x) / B
+ 
+ Eg for num_distinct=4: B = 2.5; height_ramp = 1,000,000
+ for low_x = 1.765830 => cardinality = 1000000 + 1000000 * (1.765830+0.001-0) / 2.5 = 1706732
+ which is exactly the value we observe in the blue line data.
+ </pre>
+ <li> low_x = min_x (or high_x = max_x for the right ramp) is not a special case [JLB] (i.e. we don't always get 1 as in the open range case):
+ <pre>
+ SQL> select x from t where x >= 0 and x <= 2.123;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  1849K|  5417K|  1439   (6)| 00:00:18 |
+ |*  1 |  TABLE ACCESS FULL| T    |  1849K|  5417K|  1439   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x >= 2 and x <= 2.123;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  1849K|  5417K|  1439   (6)| 00:00:18 |
+ |*  1 |  TABLE ACCESS FULL| T    |  1849K|  5417K|  1439   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ Note how the value of low_x is ignored, even if it is equal to 0 (min_x).
+ </pre>
+ </ul>
+<li> For ranges overlapping the regions - check the next section.
+</ul>
+<b>Selection over a finite range</b>
+<br>
+<br>The script <a href="range_sel_closed_finite.sql">range_sel_closed_finite.sql</a> repeats the same steps for the open range case (fixed low_x = 0.1, high_x changing over the interval iterating over the same values), of course closing the range: 
+<pre>
+select x from t where x >= low_x and x <= high_x
+</pre>
+The usual diagram (click to get the data sets for the <a href="range_sel_closed_finite_02_data.dat">red</a>, 
+<a href="range_sel_closed_finite_03_data.dat">green</a> and <a href="range_sel_closed_finite_04_data.dat">blue</a> line) is: 
+
+<img src="range_sel_closed_finite_data.jpeg">
+
+<br>Deductions:
+<ul>
+<li> No flat region on the left for high_x <= min_x + B, since the cardinality depends on high_x, not on low_x, as already observed;
+<li> As soon as high_x crosses the min_x + B boundary, the "<b>formal method of ranges decomposition</b>" can be applied, now reformulated (generalised) as (1) break the interval in subintervals, (2)compute the cardinalities over the subintervals, (3)add them, and (3)subtract num_rows/num_distinct for every "<=" or ">=" operator added to break the original interval".
+<br>
+<br>Ie (for num_distinct=4, min_x + B = 2.5):
+<pre>
+ SQL> select x from t where x >= 0.1 and x <= 7;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  3800K|    10M|  1448   (7)| 00:00:18 | (ORIGINAL)
+ |*  1 |  TABLE ACCESS FULL| T    |  3800K|    10M|  1448   (7)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x >= 0.1 and x <u><=</u> 2.5;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  2000K|  5859K|  1440   (6)| 00:00:18 | (LEFT BAND)
+ |*  1 |  TABLE ACCESS FULL| T    |  2000K|  5859K|  1440   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ SQL> select x from t where x <u><=</u> 2.5 and x <= 7;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |  3800K|    10M|  1448   (7)| 00:00:18 | (CENTRAL)
+ |*  1 |  TABLE ACCESS FULL| T    |  3800K|    10M|  1448   (7)| 00:00:18 |
+ --------------------------------------------------------------------------
+
+ We've added the 2 "<= or >=" operators shown underlined, so:
+ 2000K + 3800K - 2 * 1000K = 3800K, as requested.
+</pre>
+ <li> The same applies when high_x enters the "right band" region (we have three ranges now to add of course); again for num_distinct=4:
+<pre>
+SQL> select x from t where x >= 0.1 and x <= 9;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |  4000K|    11M|  1449   (7)| 00:00:18 | (ORIGINAL)
+|*  1 |  TABLE ACCESS FULL| T    |  4000K|    11M|  1449   (7)| 00:00:18 |
+--------------------------------------------------------------------------
+SQL> select x from t where x >= 0.1 and x <u><=</u> 2.5;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |  2000K|  5859K|  1440   (6)| 00:00:18 | (LEFT BAND)
+|*  1 |  TABLE ACCESS FULL| T    |  2000K|  5859K|  1440   (6)| 00:00:18 |
+--------------------------------------------------------------------------
+SQL> select x from t where x <u><=</u> 2.5 and x <u><=</u> 7.5;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |  4000K|    11M|  1449   (7)| 00:00:18 | (CENTRAL)
+|*  1 |  TABLE ACCESS FULL| T    |  4000K|    11M|  1449   (7)| 00:00:18 |
+--------------------------------------------------------------------------
+SQL> select x from t where x <u><=</u> 7.5 and x <= 9;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |  2000K|  5859K|  1440   (6)| 00:00:18 | (RIGHT BAND)
+|*  1 |  TABLE ACCESS FULL| T    |  2000K|  5859K|  1440   (6)| 00:00:18 |
+--------------------------------------------------------------------------
+We've added the 4 "<= or >=" operators shown underlined, so:
+2000K + 4000K + 2000K - 4 * 1000K = 4000K, as requested.
+</pre> 
+NB <i>Equivalently, one could say that the range is considered "chopped at the central region border(s)" (the part of it extending over the bands is ignored) - (ORIGINAL) and (CENTRAL) being the same. But the method can be applied in general also to semi-open, semi-closed ranges, as we'll see.</i>
+<br>
+<br>
+<li> The <b>standard formula does not apply</b>, not even close (check the column CARD_STND_F in the three data sets), so whenever one of the extremes of the range falls inside one of the two bands, you cannot count on it anymore.
+</ul>
+
+Let's move to the <a href="range_sel_semi.html">semi-closed, semi-open range case</a>.
+<br><br>
+<i>For corrections / feedback:<br>
+alberto.dellera@gmail.com</i>
+<br><br>
+
+<!-- Start of StatCounter Code -->
+<script type="text/javascript" language="javascript">
+var sc_project=2420231; 
+var sc_invisible=1; 
+var sc_partition=23; 
+var sc_security="d66786aa"; 
+var sc_text=2; 
+</script>
+
+<script type="text/javascript" language="javascript" src="http://www.statcounter.com/counter/counter.js"></script><noscript><a href="http://www.statcounter.com/" target="_blank"><img  src="http://c24.statcounter.com/counter.php?sc_project=2420231&java=0&security=d66786aa&invisible=0" alt="site stats" border="0"></a> </noscript>
+<!-- End of StatCounter Code -->
+
+</body></html>

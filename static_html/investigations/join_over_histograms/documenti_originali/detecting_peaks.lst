@@ -1,0 +1,384 @@
+SQL> 
+SQL> col value form 99999
+SQL> 
+SQL> -- some views to format dba_histograms for our example tables
+SQL> create or replace view formatted_hist_t1 as
+  2  with hist1 as (
+  3    select endpoint_number ep, endpoint_value value
+  4  	 from user_histograms
+  5  	where table_name  = 'T1'
+  6  	  and column_name = 'VALUE'
+  7  ), hist2 as (
+  8    select ep, value,
+  9  	      lag (ep) over (order by ep) prev_ep,
+ 10  	      max (ep) over ()		  max_ep
+ 11  	 from hist1
+ 12  )
+ 13  select value, ep,
+ 14  	    (select num_rows from user_tables where table_name	= 'T1')
+ 15  	    * (ep - nvl (prev_ep, 0))
+ 16  	    / max_ep as counts,
+ 17  	    decode (ep - nvl (prev_ep, 0), 0, 0, 1, 0, 1) as popularity
+ 18   from hist2
+ 19  order by ep;
+
+View created.
+
+SQL> 
+SQL> create or replace view formatted_hist_t2 as
+  2  with hist1 as (
+  3    select endpoint_number ep, endpoint_value value
+  4  	 from user_histograms
+  5  	where table_name  = 'T2'
+  6  	  and column_name = 'VALUE'
+  7  ), hist2 as (
+  8    select ep, value,
+  9  	      lag (ep) over (order by ep) prev_ep,
+ 10  	      max (ep) over ()		  max_ep
+ 11  	 from hist1
+ 12  )
+ 13  select value, ep,
+ 14  	    (select num_rows from user_tables where table_name	= 'T2')
+ 15  	    * (ep - nvl (prev_ep, 0))
+ 16  	    / max_ep as counts,
+ 17  	    decode (ep - nvl (prev_ep, 0), 0, 0, 1, 0, 1) as popularity
+ 18   from hist2
+ 19  order by ep;
+
+View created.
+
+SQL> 
+SQL> -- table t1 with a skewed distribution, and its Height-Balanced histogram collected
+SQL> create table t1 (value number);
+
+Table created.
+
+SQL> insert into t1(value) select rownum-1 from dual connect by level <= 100;
+
+100 rows created.
+
+SQL> 
+SQL> -- we need at least a popular value to avoid fallback to standard formula:
+SQL> update t1 set value = 9998 where value >= 80;
+
+20 rows updated.
+
+SQL> 
+SQL> -- table t2 exactly the same as t1, and its Height-Balanced histogram collected
+SQL> create table t2 as select * from t1;
+
+Table created.
+
+SQL> update t2 set value = 9999 where value = 9998;
+
+20 rows updated.
+
+SQL> 
+SQL> -- cardinality with no histograms
+SQL> exec dbms_stats.gather_table_stats (user, 't1', method_opt=>'for all columns size 1', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> exec dbms_stats.gather_table_stats (user, 't2', method_opt=>'for all columns size 1', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> 
+SQL> set autotrace traceonly explain
+SQL> select count(*)
+  2    from t1, t2
+  3   where t1.value = t2.value;
+
+Execution Plan
+----------------------------------------------------------                                                                                            
+Plan hash value: 906334482                                                                                                                            
+                                                                                                                                                      
+----------------------------------------------------------------------------                                                                          
+| Id  | Operation           | Name | Rows  | Bytes | Cost (%CPU)| Time     |                                                                          
+----------------------------------------------------------------------------                                                                          
+|   0 | SELECT STATEMENT    |      |     1 |     6 |     7  (15)| 00:00:01 |                                                                          
+|   1 |  SORT AGGREGATE     |      |     1 |     6 |            |          |                                                                          
+|*  2 |   HASH JOIN         |      |   123 |   738 |     7  (15)| 00:00:01 |                                                                          
+|   3 |    TABLE ACCESS FULL| T1   |   100 |   300 |     3   (0)| 00:00:01 |                                                                          
+|   4 |    TABLE ACCESS FULL| T2   |   100 |   300 |     3   (0)| 00:00:01 |                                                                          
+----------------------------------------------------------------------------                                                                          
+                                                                                                                                                      
+Predicate Information (identified by operation id):                                                                                                   
+---------------------------------------------------                                                                                                   
+                                                                                                                                                      
+   2 - access("T1"."VALUE"="T2"."VALUE")                                                                                                              
+
+SQL> set autotrace off
+SQL> 
+SQL> exec dbms_stats.gather_table_stats (user, 't1', method_opt=>'for all columns size 13', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> --select value from t1 order by value;
+SQL> select * from formatted_hist_t1;
+
+ VALUE         EP     COUNTS POPULARITY                                                                                                               
+------ ---------- ---------- ----------                                                                                                               
+     0          0          0          0                                                                                                               
+     7          1 7.69230769          0                                                                                                               
+    15          2 7.69230769          0                                                                                                               
+    23          3 7.69230769          0                                                                                                               
+    31          4 7.69230769          0                                                                                                               
+    39          5 7.69230769          0                                                                                                               
+    47          6 7.69230769          0                                                                                                               
+    54          7 7.69230769          0                                                                                                               
+    62          8 7.69230769          0                                                                                                               
+    69          9 7.69230769          0                                                                                                               
+    77         10 7.69230769          0                                                                                                               
+  9998         13 23.0769231          1                                                                                                               
+
+12 rows selected.
+
+SQL> 
+SQL> exec dbms_stats.gather_table_stats (user, 't2', method_opt=>'for all columns size 15', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> --select value from t2 order by value;
+SQL> select * from formatted_hist_t2;
+
+ VALUE         EP     COUNTS POPULARITY                                                                                                               
+------ ---------- ---------- ----------                                                                                                               
+     0          0          0          0                                                                                                               
+     6          1 6.66666667          0                                                                                                               
+    13          2 6.66666667          0                                                                                                               
+    20          3 6.66666667          0                                                                                                               
+    27          4 6.66666667          0                                                                                                               
+    34          5 6.66666667          0                                                                                                               
+    41          6 6.66666667          0                                                                                                               
+    47          7 6.66666667          0                                                                                                               
+    54          8 6.66666667          0                                                                                                               
+    60          9 6.66666667          0                                                                                                               
+    67         10 6.66666667          0                                                                                                               
+    73         11 6.66666667          0                                                                                                               
+  9999         15 26.6666667          1                                                                                                               
+
+13 rows selected.
+
+SQL> 
+SQL> -- uncomment the following two lines if you want to magnify all the contributors
+SQL> -- with the exception of "populars matching populars"
+SQL> -- You need of course to install the set_density package
+SQL> --exec set_density ('t1', 'value', 100);
+SQL> --exec set_density ('t2', 'value', 100);
+SQL> 
+SQL> -- table statistics
+SQL> col table_name form a5
+SQL> select t.table_name, t.num_rows, c.density, t.num_rows * c.density "num_rows*density", t.num_rows / c.num_distinct
+  2    from user_tables t, user_tab_columns c
+  3   where t.table_name = c.table_name
+  4  	and t.table_name in ('T1','T2')
+  5  	and c.column_name = 'VALUE'
+  6    order by table_name;
+
+TABLE   NUM_ROWS    DENSITY num_rows*density T.NUM_ROWS/C.NUM_DISTINCT                                                                                
+----- ---------- ---------- ---------------- -------------------------                                                                                
+T1           100        .01                1                 1.2345679                                                                                
+T2           100        .01                1                 1.2345679                                                                                
+
+SQL> 
+SQL> -- The Join Histogram
+SQL> create or replace view join_histogram as
+  2  select decode (lhs.popularity, 1, 'POP', 0, 'UN', '-') as lhs_popularity,
+  3  	    lhs.counts					    as lhs_counts,
+  4  	    nvl(lhs.value, rhs.value)			    as value,
+  5  	    rhs.counts					    as rhs_counts,
+  6  	    decode (rhs.popularity, 1, 'POP', 0, 'UN', '-') as rhs_popularity,
+  7  	    nvl(lhs.popularity,0) + nvl(rhs.popularity,0)   as join_popularity
+  8   from (select * from formatted_hist_t1) lhs -- select * necessary for "table does not exist" workaround
+  9  	   full outer join
+ 10  	   (select * from formatted_hist_t2) rhs -- select * necessary for "table does not exist" workaround
+ 11  	on (lhs.value = rhs.value)
+ 12  order by nvl(lhs.value, rhs.value);
+
+View created.
+
+SQL> 
+SQL> set null "-"
+SQL> col lhs_popularity form a3
+SQL> col lhs_counts	form 99.99
+SQL> col value		form 9999.9
+SQL> col rhs_counts	form 99.99
+SQL> col rhs_popularity form a3
+SQL> 
+SQL> select * from join_histogram;
+
+LHS LHS_COUNTS   VALUE RHS_COUNTS RHS JOIN_POPULARITY                                                                                                 
+--- ---------- ------- ---------- --- ---------------                                                                                                 
+UN         .00      .0        .00 UN                0                                                                                                 
+-   -              6.0       6.67 UN                0                                                                                                 
+UN        7.69     7.0 -          -                 0                                                                                                 
+-   -             13.0       6.67 UN                0                                                                                                 
+UN        7.69    15.0 -          -                 0                                                                                                 
+-   -             20.0       6.67 UN                0                                                                                                 
+UN        7.69    23.0 -          -                 0                                                                                                 
+-   -             27.0       6.67 UN                0                                                                                                 
+UN        7.69    31.0 -          -                 0                                                                                                 
+-   -             34.0       6.67 UN                0                                                                                                 
+UN        7.69    39.0 -          -                 0                                                                                                 
+-   -             41.0       6.67 UN                0                                                                                                 
+UN        7.69    47.0       6.67 UN                0                                                                                                 
+UN        7.69    54.0       6.67 UN                0                                                                                                 
+-   -             60.0       6.67 UN                0                                                                                                 
+UN        7.69    62.0 -          -                 0                                                                                                 
+-   -             67.0       6.67 UN                0                                                                                                 
+UN        7.69    69.0 -          -                 0                                                                                                 
+-   -             73.0       6.67 UN                0                                                                                                 
+UN        7.69    77.0 -          -                 0                                                                                                 
+POP      23.08  9998.0 -          -                 1                                                                                                 
+-   -           9999.0      26.67 POP               1                                                                                                 
+
+22 rows selected.
+
+SQL> 
+SQL> -- uncomment the following two lines if you want to calculate the contributors
+SQL> -- using the formula implemented in pl/sql and sql
+SQL> -- You need of course to install the join_over_histograms package
+SQL> -- workaround for bug 4626732, 5752903 "ORA-07445 [ACCESS_VIOLATION] [_evaopn2+153]"
+SQL> -- alter session set "_optimizer_native_full_outer_join"=force;
+SQL> -- select join_over_histograms.get ('t1', 'value', 't2', 'value') from dual;
+SQL> 
+SQL> select count(*) as exact_cardinality
+  2    from t1, t2
+  3   where t1.value = t2.value;
+
+EXACT_CARDINALITY                                                                                                                                     
+-----------------                                                                                                                                     
+               80                                                                                                                                     
+
+SQL> 
+SQL> set autotrace traceonly explain
+SQL> select count(*)
+  2    from t1, t2
+  3   where t1.value = t2.value;
+
+Execution Plan
+----------------------------------------------------------                                                                                            
+Plan hash value: 906334482                                                                                                                            
+                                                                                                                                                      
+----------------------------------------------------------------------------                                                                          
+| Id  | Operation           | Name | Rows  | Bytes | Cost (%CPU)| Time     |                                                                          
+----------------------------------------------------------------------------                                                                          
+|   0 | SELECT STATEMENT    |      |     1 |     6 |     7  (15)| 00:00:01 |                                                                          
+|   1 |  SORT AGGREGATE     |      |     1 |     6 |            |          |                                                                          
+|*  2 |   HASH JOIN         |      |    80 |   480 |     7  (15)| 00:00:01 |                                                                          
+|   3 |    TABLE ACCESS FULL| T1   |   100 |   300 |     3   (0)| 00:00:01 |                                                                          
+|   4 |    TABLE ACCESS FULL| T2   |   100 |   300 |     3   (0)| 00:00:01 |                                                                          
+----------------------------------------------------------------------------                                                                          
+                                                                                                                                                      
+Predicate Information (identified by operation id):                                                                                                   
+---------------------------------------------------                                                                                                   
+                                                                                                                                                      
+   2 - access("T1"."VALUE"="T2"."VALUE")                                                                                                              
+
+SQL> set autotrace off
+SQL> 
+SQL> --select '&enter.' from dual;
+SQL> 
+SQL> delete from t1 where value = 0;
+
+1 row deleted.
+
+SQL> exec dbms_stats.gather_table_stats (user, 't1', method_opt=>'for all columns size repeat', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> exec dbms_stats.gather_table_stats (user, 't2', method_opt=>'for all columns size repeat', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> 
+SQL> -- table statistics
+SQL> col table_name form a5
+SQL> select t.table_name, t.num_rows, c.density, t.num_rows * c.density "num_rows*density", t.num_rows / c.num_distinct
+  2    from user_tables t, user_tab_columns c
+  3   where t.table_name = c.table_name
+  4  	and t.table_name in ('T1','T2')
+  5  	and c.column_name = 'VALUE'
+  6    order by table_name;
+
+TABLE   NUM_ROWS    DENSITY num_rows*density T.NUM_ROWS/C.NUM_DISTINCT                                                                                
+----- ---------- ---------- ---------------- -------------------------                                                                                
+T1            99  .01010101                1                    1.2375                                                                                
+T2           100        .01                1                 1.2345679                                                                                
+
+SQL> 
+SQL> select * from join_histogram;
+
+LHS LHS_COUNTS   VALUE RHS_COUNTS RHS JOIN_POPULARITY                                                                                                 
+--- ---------- ------- ---------- --- ---------------                                                                                                 
+-   -               .0        .00 UN                0                                                                                                 
+UN         .00     1.0 -          -                 0                                                                                                 
+-   -              6.0       6.67 UN                0                                                                                                 
+UN        7.62     8.0 -          -                 0                                                                                                 
+-   -             13.0       6.67 UN                0                                                                                                 
+UN        7.62    16.0 -          -                 0                                                                                                 
+-   -             20.0       6.67 UN                0                                                                                                 
+UN        7.62    24.0 -          -                 0                                                                                                 
+-   -             27.0       6.67 UN                0                                                                                                 
+UN        7.62    32.0 -          -                 0                                                                                                 
+-   -             34.0       6.67 UN                0                                                                                                 
+UN        7.62    39.0 -          -                 0                                                                                                 
+-   -             41.0       6.67 UN                0                                                                                                 
+UN        7.62    47.0       6.67 UN                0                                                                                                 
+UN        7.62    54.0       6.67 UN                0                                                                                                 
+-   -             60.0       6.67 UN                0                                                                                                 
+UN        7.62    62.0 -          -                 0                                                                                                 
+-   -             67.0       6.67 UN                0                                                                                                 
+UN        7.62    69.0 -          -                 0                                                                                                 
+-   -             73.0       6.67 UN                0                                                                                                 
+UN        7.62    77.0 -          -                 0                                                                                                 
+POP      22.85  9998.0 -          -                 1                                                                                                 
+-   -           9999.0      26.67 POP               1                                                                                                 
+
+23 rows selected.
+
+SQL> 
+SQL> -- uncomment the following two lines if you want to calculate the contributors
+SQL> -- using the formula implemented in pl/sql and sql
+SQL> -- You need of course to install the join_over_histograms package
+SQL> -- workaround for bug 4626732, 5752903 "ORA-07445 [ACCESS_VIOLATION] [_evaopn2+153]"
+SQL> -- alter session set "_optimizer_native_full_outer_join"=force;
+SQL> -- select join_over_histograms.get ('t1', 'value', 't2', 'value') from dual;
+SQL> 
+SQL> select count(*) as exact_cardinality
+  2    from t1, t2
+  3   where t1.value = t2.value;
+
+EXACT_CARDINALITY                                                                                                                                     
+-----------------                                                                                                                                     
+               79                                                                                                                                     
+
+SQL> 
+SQL> set autotrace traceonly explain
+SQL> select count(*)
+  2    from t1, t2
+  3   where t1.value = t2.value;
+
+Execution Plan
+----------------------------------------------------------                                                                                            
+Plan hash value: 906334482                                                                                                                            
+                                                                                                                                                      
+----------------------------------------------------------------------------                                                                          
+| Id  | Operation           | Name | Rows  | Bytes | Cost (%CPU)| Time     |                                                                          
+----------------------------------------------------------------------------                                                                          
+|   0 | SELECT STATEMENT    |      |     1 |     6 |     7  (15)| 00:00:01 |                                                                          
+|   1 |  SORT AGGREGATE     |      |     1 |     6 |            |          |                                                                          
+|*  2 |   HASH JOIN         |      |    32 |   192 |     7  (15)| 00:00:01 |                                                                          
+|   3 |    TABLE ACCESS FULL| T1   |    99 |   297 |     3   (0)| 00:00:01 |                                                                          
+|   4 |    TABLE ACCESS FULL| T2   |   100 |   300 |     3   (0)| 00:00:01 |                                                                          
+----------------------------------------------------------------------------                                                                          
+                                                                                                                                                      
+Predicate Information (identified by operation id):                                                                                                   
+---------------------------------------------------                                                                                                   
+                                                                                                                                                      
+   2 - access("T1"."VALUE"="T2"."VALUE")                                                                                                              
+
+SQL> set autotrace off
+SQL> 
+SQL> spool off

@@ -1,0 +1,12 @@
+<!--#include virtual="/ssi_pre_title.html" --> 
+<title>Alberto Dell'Era: Join Over Histograms</title>
+<!--#include virtual="/ssi_post_title.html" -->
+<br>
+<br>This <a href="JoinOverHistograms.pdf">paper</a> presents and illustrates the formula used by the Oracle(TM) Cost Based Optimizer to estimate 
+<br>the cardinality of an equijoin, when both the columns referenced in the join predicate have histograms collected.
+<br>
+<br>Practical implications (and possible pitfalls) are illustrated as well.
+<br>
+<br>The supporting material is <a href="JoinOverHistograms_supporting_material.zip">here</a>.
+
+<!--#include virtual="/ssi_bottom.html" -->

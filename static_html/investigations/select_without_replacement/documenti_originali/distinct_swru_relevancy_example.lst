@@ -1,0 +1,87 @@
+SQL> 
+SQL> -- end of initialization section
+SQL> 
+SQL> drop table t;
+
+Table dropped.
+
+SQL> 
+SQL> create table t
+  2  as
+  3  select trunc(dbms_random.value(0,6000)) as x, 40 + trunc(dbms_random.value(0,20)) as filter
+  4    from dual connect by level <= 100000;
+
+Table created.
+
+SQL> 
+SQL> exec dbms_stats.gather_table_stats (user, 't', cascade=>true, method_opt => 'for columns x size 1, columns filter size 254', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> 
+SQL> select count(*)
+  2    from (
+  3  select distinct x
+  4    from t
+  5   where filter = 42
+  6         );
+
+  COUNT(*)
+----------
+      3428
+
+1 row selected.
+
+SQL> 
+SQL> set autotrace traceonly explain
+SQL> alter session set events '10053 trace name context forever, level 1';
+
+Session altered.
+
+SQL> 
+SQL> select distinct x
+  2    from t
+  3   where filter = 42;
+
+Execution Plan
+----------------------------------------------------------
+Plan hash value: 1793979440
+
+---------------------------------------------------------------------------
+| Id  | Operation          | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+---------------------------------------------------------------------------
+|   0 | SELECT STATEMENT   |      |  3477 | 20862 |    48  (15)| 00:00:01 |
+|   1 |  HASH UNIQUE       |      |  3477 | 20862 |    48  (15)| 00:00:01 |
+|*  2 |   TABLE ACCESS FULL| T    |  5066 | 30396 |    46  (11)| 00:00:01 |
+---------------------------------------------------------------------------
+
+Predicate Information (identified by operation id):
+---------------------------------------------------
+
+   2 - filter("FILTER"=42)
+
+SQL> 
+SQL> alter session set events '10053 trace name context off';
+
+Session altered.
+
+SQL> set autotrace off
+SQL> 
+SQL> select t.table_name, c.column_name, c.num_distinct, c.num_buckets,
+  2         swru ( c.num_distinct, 5066, t.num_rows ) f_num_distinct
+  3   from user_tab_columns c, user_tables t
+  4   where t.table_name in ('T')
+  5     and t.table_name = c.table_name
+  6     and c.column_name in ('X')
+  7   order by table_name, column_name;
+
+TABLE_NAME           COLUMN_NAME          NUM_DISTINCT NUM_BUCKETS F_NUM_DISTINCT
+-------------------- -------------------- ------------ ----------- --------------
+T                    X                            6000           1     3476.81841
+
+1 row selected.
+
+SQL> 
+SQL> doc
+SQL> 
+SQL> spool off

@@ -1,0 +1,141 @@
+<!--#include virtual="/ssi_pre_title.html" --> 
+<title>Alberto Dell'Era: sga_xplan</title>
+<!--#include virtual="/ssi_post_title.html" -->
+<br>
+<b>
+Note: sga_xplan is obsolete and replaced by the vastly superior <a href="http://www.adellera.it/scripts_etcetera/xplan">xplan</a>,
+<br> which is install-free (does not need package installations) and prints more infos in an improved layout.
+<br> sga_xplan will be removed in the near future.
+</b>
+<br><br>
+<br><br>
+<br>
+The package <a href ="sga_xplan.sql">sga_xplan</a> "prints" the plans stored in the library cache using dbms_xplan for formatting (both on 9i and 10g).
+<br><br>
+It also prints when available:
+<ul>
+<li>shared cursor statistics stored in v$sql</li>
+<li>shared cursor statistics stored in v$sql_plan_statistics (also using dbms_xplan "ALLSTATS" in 10g) </li>
+<li>values and types of peeked bind variables (from v$sql_plan.other_xml)</li>
+<li>layout (columns, indexes, etc) of all tables referenced by the statement, and their associated statistics (num_distinct, etc)
+</ul>
+An example on 10g:
+
+<br><br>
+dellera@ORACLE10> select * from table (<b>sga_xplan.display</b> ('select%from%mytable%'));
+<br>
+<pre>
+============================================================================================================================
+module: SQL*Plus, dump_date: 2007/05/05 12:31:38, sql_id: gyc58g6xn34d0
+first_load_time: 2007/05/05 12:31:32, last_load_time: 2007/05/05 12:31:32
+
+select * from mytable where id = :b1
+
+
+peeked binds values: :B1 = 42
+peeked binds types : :B1 = number(22)
+Plan hash value: 147379428
+
+-----------------------------------------------------------------------------------
+| Id  | Operation        | Name           | Rows  | Bytes | Cost (%CPU)| Time     | Real Rows(real-estd)
+-----------------------------------------------------------------------------------
+|   0 | SELECT STATEMENT |                |       |       |     2 (100)|          |
+|*  1 |  INDEX RANGE SCAN| MYTABLE_ID_IDX |     1 |     4 |     2   (0)| 00:00:01 |        1 (        0)
+-----------------------------------------------------------------------------------
+
+Predicate Information (identified by operation id):
+---------------------------------------------------
+
+   1 - access("ID"=:B1)
+
+Plan hash value: 147379428
+
+---------------------------------------------------------------------------------------------
+| Id  | Operation        | Name           | Starts | E-Rows | A-Rows |   A-Time   | Buffers |
+---------------------------------------------------------------------------------------------
+|*  1 |  INDEX RANGE SCAN| MYTABLE_ID_IDX |      1 |      1 |      1 |00:00:00.01 |       4 |
+---------------------------------------------------------------------------------------------
+
+Predicate Information (identified by operation id):
+---------------------------------------------------
+
+   1 - access("ID"=:B1)
+v$sql_plan_statistics.stat / v$sql_plan_statistics.starts / v$sql.executions
+-------------------------------------------------------------------------------------------------------------
+| id  | output_rows    | cr_buffer_gets | cu_buffer_gets | disk_reads     | disk_writes    | elapsed (usec) |
+-------------------------------------------------------------------------------------------------------------
+|   1 |            1.0 |            4.0 |             .0 |             .0 |             .0 |           59.0 |
+-------------------------------------------------------------------------------------------------------------
+v$sql_plan_statistics.stat / v$sql.executions
+------------------------------------------------------------------------------------------------------------------------------
+| id  | output_rows    | cr_buffer_gets | cu_buffer_gets | disk_reads     | disk_writes    | elapsed (usec) | starts         |
+------------------------------------------------------------------------------------------------------------------------------
+|   1 |            1.0 |            4.0 |             .0 |             .0 |             .0 |           59.0 |            1.0 |
+------------------------------------------------------------------------------------------------------------------------------
+--------------------------------- ------------------------------- ----------------------------------------
+|v$sql statname  |total |/exec  | |v$sql statname |total |/exec | |v$sql statname          |total |/exec |
+--------------------------------- ------------------------------- ----------------------------------------
+|executions      |    1 |       | |sorts          |    0 |   .0 | |users_executing         |    0 |   .0 |
+|rows_processed  |    1 |   1.0 | |fetches        |    2 |  2.0 | |application wait (usec) |    0 |   .0 |
+|buffer_gets     |   54 |  54.0 | |end_of_fetch_c |    1 |  1.0 | |concurrency wait (usec) |    0 |   .0 |
+|disk_reads      |    0 |    .0 | |parse_calls    |    1 |  1.0 | |cluster     wait (usec) |    0 |   .0 |
+|direct_writes   |    0 |    .0 | |sharable_mem   |12614 |      | |user io     wait (usec) |    0 |   .0 |
+|elapsed (usec)  | 6962 |6962.0 | |persistent_mem | 2072 |      | |plsql exec  wait (usec) |    0 |   .0 |
+|cpu_time (usec) | 6962 |6962.0 | |runtime_mem    | 1420 |      | |java  exec  wait (usec) |    0 |   .0 |
+--------------------------------- ------------------------------- ----------------------------------------
+** table        num_rows blocks empty_blocks avg_row_len sample_size       last_analyzed
+dellera.MYTABLE  1000000   1630            0           4     1000000 2007/05/05 12:28:15
+column 1                       ndv density nulls bkts avg_col_len       last_analyzed
+ID     aP NUMBER (38,0) NN 1000000 .000001     0    1           5 2007/05/05 12:28:15
+- index          distinct_keys num_rows blevel leaf_blocks cluf sample_size       last_analyzed
+1 MYTABLE_ID_IDX       1000000  1000000      2        2226 1516     1000000 2007/05/05 12:28:22
+============================================================================================================================
+</pre>
+
+<i>Note: You can use the less-verbose procedure </i>print<i> if the output size is less than your sqlplus serveroutput size:<br>
+dellera@ORACLE10> exec <b>sga_xplan.print</b> ('select%from%mytable%');</i>
+<br><br>
+Note the "estimated vs real" cardinalities to the right of the dbms_xplan output (supports Wolfgang Breitling's "Tuning by Cardinality Feedback", see <a href="http://www.centrexcc.com">www.centrexcc.com</a>).
+<br><br>
+The idea is not new, and can be found in the book <a href="http://www.amazon.com/exec/obidos/tg/detail/-/0072230657">"Effective Oracle by Design" by Thomas Kyte</a>, page 91, "dynamic_plan_table".<br>
+I've just written some pl/sql to make it more convenient to use (added the like-matching and the dump from v$sql, v$sql_plan, v$sql_plan_statistics).
+<br><br>
+I've used it for:
+
+<br><br>
+<b>Working around <i>explain plan</i> limitations with bind variables when testing/tuning a statement</b><br>
+<i>explain plan</i> always assumes that the bind variables type is VARCHAR2, and never consider their value when calculating the plan.<br>
+Unfortunately the CBO peeks at the bind variables value and type when optimizing the statement, coming out with a very different plan quite often (see the script header comment for a classic example).<br>
+You could be happy by replacing the bind variable with the actual value, but changing the statement is something that I'm reluctant to do, since the CBO may optimize a bindless statement differently (and indeed it does if you're unfortunate enough to have to run with cursor_sharing=force/similar). 
+<br><br>
+So, in short, I find it very convenient to simply run the statement and then use sga_xplan.
+<br><br>
+I normally put a marker in the test statements to make them easily recognizable:<br>
+select /* alberto_test #1 */ from ...<br>
+select /* alberto_test #2 */ from ...<br>
+select * from table (sga_xplan.display ('%alberto_test%'));
+
+<br><br>
+<b>Getting the plans of (3rd-party) applications in (pre)production </b><br>
+Even if you know the text of a statement issued by an application, it's usually a bit cumbersome to reproduce the plan using <i>explain plan</i> in another sqlplus session. You may not know the bind variables values (and consider bind variable peeking, you must know the value that was in effect when the plan got parsed), you have to reproduce the application environment (sort_area_size, optimizer_goal, the fetch size, etc), you must have access to the application schema ... <br>
+Much easier to use sga_xplan, and get the real plan in a couple of seconds (and if you want, *all* the plans of the application).<br>
+(but look at the caveats section below).
+
+
+<br><br>
+<b>Studing features</b><br>
+Recently I was investigating the refresh-on-commit materialized views machinery, and I noticed that all statements issued by the materialized view engine on the user tables where conveniently prefixed by "/* MV_REFRESH ... */" (in 9.2.0.6).<br> 
+So I did this, on my test machine obviously:
+<br><br>
+alter system flush shared_pool;<br>
+<i>run a script that exercised the MVs on a certain scenario</i><br>
+select * from table (sga_xplan.display ('%MV_REFRESH%'));
+
+<br><br>
+And so I got an immediate feel of how my tables were used during the refresh process.
+<br><br>
+<b>Caveats</b><br>
+Be careful in production - the package reads v$sql and v$sql_plan, so if you're already contending heavily with the library cache latches, it may make the contention worse during the sga_xplan invocation.
+<br><br>
+
+<!--#include virtual="/ssi_bottom.html" -->

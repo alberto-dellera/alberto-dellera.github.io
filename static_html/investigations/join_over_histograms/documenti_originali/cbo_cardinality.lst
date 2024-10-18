@@ -1,0 +1,227 @@
+SQL> 
+SQL> create or replace package cbo_cardinality is
+  2  
+  3    -- get the CBO join cardinality estimation for the statement
+  4    -- select ... from <p_lhs_table_name> lhs, <p_rhs_table_name> rhs
+  5    --  where lhs.<p_lhs_column_name> = rhs.<p_rhs_column_name>
+  6    function get (
+  7  	 p_lhs_table_name  varchar2,
+  8  	 p_lhs_column_name varchar2,
+  9  	 p_rhs_table_name  varchar2,
+ 10  	 p_rhs_column_name varchar2
+ 11    )
+ 12    return number;
+ 13  
+ 14    -- same as "get", but with warnings as well
+ 15    function get_with_warn (
+ 16  	 p_lhs_table_name  varchar2,
+ 17  	 p_lhs_column_name varchar2,
+ 18  	 p_rhs_table_name  varchar2,
+ 19  	 p_rhs_column_name varchar2,
+ 20  	 p_warnings	   out varchar2
+ 21    )
+ 22    return number;
+ 23  
+ 24    -- return the output of "get" in p_card, and the output of "get"
+ 25    -- with lhs and rhs swapped in p_card_swapped.
+ 26    procedure get_both (
+ 27  	 p_lhs_table_name  varchar2,
+ 28  	 p_lhs_column_name varchar2,
+ 29  	 p_rhs_table_name  varchar2,
+ 30  	 p_rhs_column_name varchar2,
+ 31  	 p_card 	   out number,
+ 32  	 p_card_swapped    out number
+ 33    );
+ 34  
+ 35  end cbo_cardinality;
+ 36  /
+
+Package created.
+
+SQL> show errors;
+No errors.
+SQL> 
+SQL> create or replace package body cbo_cardinality is
+  2  
+  3  function get_internal (
+  4    p_lhs_table_name  varchar2,
+  5    p_lhs_column_name varchar2,
+  6    p_rhs_table_name  varchar2,
+  7    p_rhs_column_name varchar2
+  8  )
+  9  return number
+ 10  is
+ 11    -- these uniquely identify a statement
+ 12    l_start_scn varchar2(100) := dbms_flashback.get_system_change_number;
+ 13    l_tag	   varchar2(100);
+ 14  
+ 15    -- cursor to probe the CBO and its statement text
+ 16    l_c     sys_refcursor;
+ 17    l_query varchar2(1000);
+ 18  
+ 19    -- type for "cursor unique id" below
+ 20    type t_stmt_id_record is record (
+ 21  	 address       v$sql.address%type,
+ 22  	 hash_value    v$sql.hash_value%type,
+ 23  	 child_number  v$sql.child_number%type
+ 24    );
+ 25  
+ 26    -- contains the cursor unique id
+ 27    l_stmt_id t_stmt_id_record;
+ 28  
+ 29    l_cbo_est_card number;
+ 30  begin
+ 31  
+ 32    -- build an unique (=tagged with unique tage) stmt text
+ 33    l_tag := '/*+ test#' || l_start_scn || '.' || dbms_random.random || ' */';
+ 34    l_query := l_tag || ' select /*+ use_hash(a,b) */ * '
+ 35  			|| '   from '||p_lhs_table_name||' a, '||p_rhs_table_name||' b '
+ 36  			|| '  where a.'||p_lhs_column_name||' = b.'||p_rhs_column_name;
+ 37  
+ 38    -- parse the statement
+ 39    open l_c for (l_query);
+ 40    close l_c;
+ 41  
+ 42    -- -----------------------------
+ 43    -- | SELECT STATEMENT   |      |
+ 44    -- |  HASH JOIN	       |      |
+ 45    -- |   TABLE ACCESS FULL| T2   |
+ 46    -- |   TABLE ACCESS FULL| T1   |
+ 47    -- -----------------------------
+ 48  
+ 49    -- read cardinality from v$sql_plan
+ 50    select address, hash_value, child_number
+ 51  	 into l_stmt_id.address, l_stmt_id.hash_value, l_stmt_id.child_number
+ 52  	 from v$sql
+ 53  	where sql_text = l_query
+ 54  	  and rownum = 1; -- this alone cuts the elapsed time by 50%
+ 55  
+ 56    select cardinality
+ 57  	 into l_cbo_est_card
+ 58  	 from v$sql_plan
+ 59  	where address	   = l_stmt_id.address
+ 60  	  and hash_value   = l_stmt_id.hash_value
+ 61  	  and child_number = l_stmt_id.child_number
+ 62  	  and operation    = 'HASH JOIN';
+ 63  
+ 64    return l_cbo_est_card;
+ 65  end get_internal;
+ 66  
+ 67  function get_with_warn (
+ 68    p_lhs_table_name  varchar2,
+ 69    p_lhs_column_name varchar2,
+ 70    p_rhs_table_name  varchar2,
+ 71    p_rhs_column_name varchar2,
+ 72    p_warnings	 out varchar2
+ 73  )
+ 74  return number
+ 75  is
+ 76    l_cbo_1 number;
+ 77    l_cbo_2 number;
+ 78    l_cbo_min number;
+ 79    l_cbo_max number;
+ 80  begin
+ 81    l_cbo_1 := get_internal (p_lhs_table_name, p_lhs_column_name, p_rhs_table_name, p_rhs_column_name);
+ 82    l_cbo_2 := get_internal (p_rhs_table_name, p_rhs_column_name, p_lhs_table_name, p_lhs_column_name);
+ 83  
+ 84    if l_cbo_1 != l_cbo_2 then
+ 85  	 l_cbo_min := least    (l_cbo_1, l_cbo_2);
+ 86  	 l_cbo_max := greatest (l_cbo_1, l_cbo_2);
+ 87  	 p_warnings := 'WARNING: cbo cardinality changes by swapping LHS and RHS'
+ 88  		    || '(min='||l_cbo_min||' max='||l_cbo_max||' diff='||(l_cbo_max-l_cbo_min)||')';
+ 89    end if;
+ 90  
+ 91    return least (l_cbo_1, l_cbo_2);
+ 92  end get_with_warn;
+ 93  
+ 94  procedure get_both (
+ 95  	 p_lhs_table_name  varchar2,
+ 96  	 p_lhs_column_name varchar2,
+ 97  	 p_rhs_table_name  varchar2,
+ 98  	 p_rhs_column_name varchar2,
+ 99  	 p_card 	   out number,
+100  	 p_card_swapped    out number
+101    )
+102  is
+103  begin
+104    p_card	      := get_internal (p_lhs_table_name, p_lhs_column_name, p_rhs_table_name, p_rhs_column_name);
+105    p_card_swapped := get_internal (p_rhs_table_name, p_rhs_column_name, p_lhs_table_name, p_lhs_column_name);
+106  end get_both;
+107  
+108  function get (
+109    p_lhs_table_name  varchar2,
+110    p_lhs_column_name varchar2,
+111    p_rhs_table_name  varchar2,
+112    p_rhs_column_name varchar2
+113  )
+114  return number
+115  is
+116    l_warn varchar2(200 char);
+117    l_ret number;
+118  begin
+119    l_ret := get_with_warn (p_lhs_table_name, p_lhs_column_name, p_rhs_table_name, p_rhs_column_name, l_warn);
+120    dbms_output.put_line (l_warn);
+121    return l_ret;
+122  end get;
+123  
+124  end cbo_cardinality;
+125  /
+
+Package body created.
+
+SQL> show errors;
+No errors.
+SQL> 
+SQL> -- sanity check installation
+SQL> drop table t1;
+
+Table dropped.
+
+SQL> drop table t2;
+
+Table dropped.
+
+SQL> 
+SQL> create table t1 as select rownum x from dual connect by level <= 10;
+
+Table created.
+
+SQL> create table t2 as select rownum y from dual connect by level <= 10;
+
+Table created.
+
+SQL> exec dbms_stats.gather_table_stats (user, 't1', method_opt=>'for all columns size 1');
+
+PL/SQL procedure successfully completed.
+
+SQL> exec dbms_stats.gather_table_stats (user, 't2', method_opt=>'for all columns size 1');
+
+PL/SQL procedure successfully completed.
+
+SQL> 
+SQL> select cbo_cardinality.get ('t1','x','t2','y') from dual;
+
+CBO_CARDINALITY.GET('T1','X','T2','Y')                                                                                                                
+--------------------------------------                                                                                                                
+                                    10                                                                                                                
+
+SQL> variable card number
+SQL> variable w varchar2(200)
+SQL> exec :card := cbo_cardinality.get_with_warn ('t1','x','t2','y',:w);
+
+PL/SQL procedure successfully completed.
+
+SQL> print card
+
+      CARD                                                                                                                                            
+----------                                                                                                                                            
+        10                                                                                                                                            
+
+SQL> print w
+
+W                                                                                                                                                     
+------------------------------------------------------------------------------------------------------------------------------------------------------
+                                                                                                                                                      
+
+SQL> 
+SQL> spool off

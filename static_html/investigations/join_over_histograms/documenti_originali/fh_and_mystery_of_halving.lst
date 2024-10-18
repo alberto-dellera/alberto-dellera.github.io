@@ -1,0 +1,918 @@
+SQL> 
+SQL> col value form 99.9
+SQL> 
+SQL> -- some views to format dba_histograms for our example tables
+SQL> create or replace view formatted_hist_t1 as
+  2  with hist1 as (
+  3    select endpoint_number ep, endpoint_value value
+  4  	 from user_histograms
+  5  	where table_name  = 'T1'
+  6  	  and column_name = 'VALUE'
+  7  ), hist2 as (
+  8    select ep, value,
+  9  	      lag (ep) over (order by ep) prev_ep,
+ 10  	      max (ep) over ()		  max_ep
+ 11  	 from hist1
+ 12  )
+ 13  select value, ep,
+ 14  	    (select num_rows from user_tables where table_name	= 'T1')
+ 15  	    * (ep - nvl (prev_ep, 0))
+ 16  	    / max_ep as counts,
+ 17  	    decode (ep - nvl (prev_ep, 0), 0, 0, 1, 0, 1) as popularity
+ 18   from hist2
+ 19  order by ep;
+
+View created.
+
+SQL> 
+SQL> create or replace view formatted_hist_t2 as
+  2  with hist1 as (
+  3    select endpoint_number ep, endpoint_value value
+  4  	 from user_histograms
+  5  	where table_name  = 'T2'
+  6  	  and column_name = 'VALUE'
+  7  ), hist2 as (
+  8    select ep, value,
+  9  	      lag (ep) over (order by ep) prev_ep,
+ 10  	      max (ep) over ()		  max_ep
+ 11  	 from hist1
+ 12  )
+ 13  select value, ep,
+ 14  	    (select num_rows from user_tables where table_name	= 'T2')
+ 15  	    * (ep - nvl (prev_ep, 0))
+ 16  	    / max_ep as counts,
+ 17  	    decode (ep - nvl (prev_ep, 0), 0, 0, 1, 0, 1) as popularity
+ 18   from hist2
+ 19  order by ep;
+
+View created.
+
+SQL> 
+SQL> -- table t1 with a skewed distribution, and its Frequency histogram collected
+SQL> create table t1 (value number);
+
+Table created.
+
+SQL> insert into t1(value) select  10 from dual connect by level <= 73;
+
+73 rows created.
+
+SQL> insert into t1(value) select  20 from dual connect by level <= 61;
+
+61 rows created.
+
+SQL> insert into t1(value) select  30 from dual connect by level <= 97;
+
+97 rows created.
+
+SQL> insert into t1(value) select  40 from dual connect by level <= 82;
+
+82 rows created.
+
+SQL> insert into t1(value) select  50 from dual connect by level <= 91;
+
+91 rows created.
+
+SQL> insert into t1(value) select  70 from dual connect by level <= 96;
+
+96 rows created.
+
+SQL> 
+SQL> exec dbms_stats.gather_table_stats (user, 't1', method_opt=>'for all columns size 254', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> select value from t1 order by value;
+
+VALUE                                                                                                                                                 
+-----                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+
+500 rows selected.
+
+SQL> select * from formatted_hist_t1;
+
+VALUE         EP     COUNTS POPULARITY                                                                                                                
+----- ---------- ---------- ----------                                                                                                                
+ 10.0         73         73          1                                                                                                                
+ 20.0        134         61          1                                                                                                                
+ 30.0        231         97          1                                                                                                                
+ 40.0        313         82          1                                                                                                                
+ 50.0        404         91          1                                                                                                                
+ 70.0        500         96          1                                                                                                                
+
+6 rows selected.
+
+SQL> 
+SQL> -- table t2 with all distinct values, and its Frequency histogram collected
+SQL> create table t2 (value number);
+
+Table created.
+
+SQL> insert into t2(value) values (10);
+
+1 row created.
+
+SQL> insert into t2(value) values (20);
+
+1 row created.
+
+SQL> insert into t2(value) values (30);
+
+1 row created.
+
+SQL> insert into t2(value) values (40);
+
+1 row created.
+
+SQL> insert into t2(value) values (50);
+
+1 row created.
+
+SQL> insert into t2(value) values (60);
+
+1 row created.
+
+SQL> insert into t2(value) values (70);
+
+1 row created.
+
+SQL> 
+SQL> -- uncomment the following two lines if you want to check that
+SQL> -- the presence of FK constraints doesn't make any difference
+SQL> --alter table t2 add primary key (value);
+SQL> --alter table t1 add constraint fk foreign key (value) references t2 (value);
+SQL> 
+SQL> exec dbms_stats.gather_table_stats (user, 't2', method_opt=>'for all columns size 254', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> select value from t2 order by value;
+
+VALUE                                                                                                                                                 
+-----                                                                                                                                                 
+ 10.0                                                                                                                                                 
+ 20.0                                                                                                                                                 
+ 30.0                                                                                                                                                 
+ 40.0                                                                                                                                                 
+ 50.0                                                                                                                                                 
+ 60.0                                                                                                                                                 
+ 70.0                                                                                                                                                 
+
+7 rows selected.
+
+SQL> select * from formatted_hist_t2;
+
+VALUE         EP     COUNTS POPULARITY                                                                                                                
+----- ---------- ---------- ----------                                                                                                                
+ 10.0          1          1          0                                                                                                                
+ 20.0          2          1          0                                                                                                                
+ 30.0          3          1          0                                                                                                                
+ 40.0          4          1          0                                                                                                                
+ 50.0          5          1          0                                                                                                                
+ 60.0          6          1          0                                                                                                                
+ 70.0          7          1          0                                                                                                                
+
+7 rows selected.
+
+SQL> 
+SQL> -- uncomment the following two lines if you want to magnify all the contributors
+SQL> -- with the exception of "populars matching populars"
+SQL> -- You need of course to install the set_density package
+SQL> --exec set_density ('t1', 'value', 100);
+SQL> --exec set_density ('t2', 'value', 100);
+SQL> 
+SQL> -- table statistics
+SQL> col table_name form a5
+SQL> select t.table_name, t.num_rows, c.density, t.num_rows * c.density "num_rows*density", t.num_rows / c.num_distinct
+  2    from user_tables t, user_tab_columns c
+  3   where t.table_name = c.table_name
+  4  	and t.table_name in ('T1','T2')
+  5  	and c.column_name = 'VALUE'
+  6    order by table_name;
+
+TABLE   NUM_ROWS    DENSITY num_rows*density T.NUM_ROWS/C.NUM_DISTINCT                                                                                
+----- ---------- ---------- ---------------- -------------------------                                                                                
+T1           500       .001               .5                83.3333333                                                                                
+T2             7 .071428571               .5                         1                                                                                
+
+SQL> 
+SQL> -- The Join Histogram
+SQL> create or replace view join_histogram as
+  2  select decode (lhs.popularity, 1, 'POP', 0, 'UN', '-') as lhs_popularity,
+  3  	    nvl(to_char(lhs.counts),'-')		    as lhs_counts,
+  4  	    nvl(lhs.value, rhs.value)			    as value,
+  5  	    nvl(to_char(rhs.counts),'-')		    as rhs_counts,
+  6  	    decode (rhs.popularity, 1, 'POP', 0, 'UN', '-') as rhs_popularity,
+  7  	    nvl(lhs.popularity,0) + nvl(rhs.popularity,0)   as join_popularity
+  8   from (select * from formatted_hist_t1) lhs -- select * necessary for "table does not exist" workaround
+  9  	   full outer join
+ 10  	   (select * from formatted_hist_t2) rhs -- select * necessary for "table does not exist" workaround
+ 11  	on (lhs.value = rhs.value)
+ 12  order by nvl(lhs.value, rhs.value);
+
+View created.
+
+SQL> 
+SQL> col lhs_popularity form a3
+SQL> col lhs_counts	form a5
+SQL> col value		form 99
+SQL> col rhs_counts	form a5
+SQL> col rhs_popularity form a3
+SQL> select * from join_histogram;
+
+LHS LHS_C VALUE RHS_C RHS JOIN_POPULARITY                                                                                                             
+--- ----- ----- ----- --- ---------------                                                                                                             
+POP 73       10 1     UN                1                                                                                                             
+POP 61       20 1     UN                1                                                                                                             
+POP 97       30 1     UN                1                                                                                                             
+POP 82       40 1     UN                1                                                                                                             
+POP 91       50 1     UN                1                                                                                                             
+-   -        60 1     UN                0                                                                                                             
+POP 96       70 1     UN                1                                                                                                             
+
+7 rows selected.
+
+SQL> 
+SQL> -- uncomment the following two lines if you want to calculate the contributors
+SQL> -- using the formula implemented in pl/sql and sql
+SQL> -- You need of course to install the join_over_histograms package
+SQL> -- workaround for bug 4626732, 5752903 "ORA-07445 [ACCESS_VIOLATION] [_evaopn2+153]"
+SQL> --alter session set "_optimizer_native_full_outer_join"=force;
+SQL> --select join_over_histograms.get ('t1', 'value', 't2', 'value') from dual;
+SQL> 
+SQL> select count(*) as exact_cardinality
+  2    from t1, t2
+  3   where t1.value = t2.value;
+
+EXACT_CARDINALITY                                                                                                                                     
+-----------------                                                                                                                                     
+              500                                                                                                                                     
+
+SQL> 
+SQL> set autotrace traceonly explain
+SQL> select count(*)
+  2    from t1, t2
+  3   where t1.value = t2.value;
+
+Execution Plan
+----------------------------------------------------------                                                                                            
+Plan hash value: 4274056747                                                                                                                           
+                                                                                                                                                      
+----------------------------------------------------------------------------                                                                          
+| Id  | Operation           | Name | Rows  | Bytes | Cost (%CPU)| Time     |                                                                          
+----------------------------------------------------------------------------                                                                          
+|   0 | SELECT STATEMENT    |      |     1 |     6 |     7  (15)| 00:00:01 |                                                                          
+|   1 |  SORT AGGREGATE     |      |     1 |     6 |            |          |                                                                          
+|*  2 |   HASH JOIN         |      |   251 |  1506 |     7  (15)| 00:00:01 |                                                                          
+|   3 |    TABLE ACCESS FULL| T2   |     7 |    21 |     3   (0)| 00:00:01 |                                                                          
+|   4 |    TABLE ACCESS FULL| T1   |   500 |  1500 |     3   (0)| 00:00:01 |                                                                          
+----------------------------------------------------------------------------                                                                          
+                                                                                                                                                      
+Predicate Information (identified by operation id):                                                                                                   
+---------------------------------------------------                                                                                                   
+                                                                                                                                                      
+   2 - access("T1"."VALUE"="T2"."VALUE")                                                                                                              
+
+SQL> set autotrace off
+SQL> 
+SQL> -- remove the histogram on t2 - so that the CBO uses the standard formula and
+SQL> -- gets back the exact cardinality.
+SQL> exec dbms_stats.gather_table_stats (user, 't2', method_opt=>'for all columns size 1', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> 
+SQL> set autotrace traceonly explain
+SQL> select count(*)
+  2    from t1, t2
+  3   where t1.value = t2.value;
+
+Execution Plan
+----------------------------------------------------------                                                                                            
+Plan hash value: 4274056747                                                                                                                           
+                                                                                                                                                      
+----------------------------------------------------------------------------                                                                          
+| Id  | Operation           | Name | Rows  | Bytes | Cost (%CPU)| Time     |                                                                          
+----------------------------------------------------------------------------                                                                          
+|   0 | SELECT STATEMENT    |      |     1 |     6 |     7  (15)| 00:00:01 |                                                                          
+|   1 |  SORT AGGREGATE     |      |     1 |     6 |            |          |                                                                          
+|*  2 |   HASH JOIN         |      |   500 |  3000 |     7  (15)| 00:00:01 |                                                                          
+|   3 |    TABLE ACCESS FULL| T2   |     7 |    21 |     3   (0)| 00:00:01 |                                                                          
+|   4 |    TABLE ACCESS FULL| T1   |   500 |  1500 |     3   (0)| 00:00:01 |                                                                          
+----------------------------------------------------------------------------                                                                          
+                                                                                                                                                      
+Predicate Information (identified by operation id):                                                                                                   
+---------------------------------------------------                                                                                                   
+                                                                                                                                                      
+   2 - access("T1"."VALUE"="T2"."VALUE")                                                                                                              
+
+SQL> set autotrace off
+SQL> 
+SQL> -- check that the halving will accumulate - an halving for every table with unique values joined
+SQL> create table t3 as select * from t2;
+
+Table created.
+
+SQL> alter table t1 add (value2 number);
+
+Table altered.
+
+SQL> update t1 set value2=value;
+
+500 rows updated.
+
+SQL> exec dbms_stats.gather_table_stats (user, 't1', method_opt=>'for all columns size 254', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> exec dbms_stats.gather_table_stats (user, 't2', method_opt=>'for all columns size 254', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> exec dbms_stats.gather_table_stats (user, 't3', method_opt=>'for all columns size 254', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> 
+SQL> select count(*) as exact_cardinality
+  2    from t1, t2, t3
+  3   where t1.value  = t2.value
+  4  	and t1.value2 = t3.value;
+
+EXACT_CARDINALITY                                                                                                                                     
+-----------------                                                                                                                                     
+              500                                                                                                                                     
+
+SQL> 
+SQL> set autotrace traceonly explain
+SQL> select count(*)
+  2    from t1, t2, t3
+  3   where t1.value  = t2.value
+  4  	and t1.value2 = t3.value;
+
+Execution Plan
+----------------------------------------------------------                                                                                            
+Plan hash value: 4228138                                                                                                                              
+                                                                                                                                                      
+-----------------------------------------------------------------------------                                                                         
+| Id  | Operation            | Name | Rows  | Bytes | Cost (%CPU)| Time     |                                                                         
+-----------------------------------------------------------------------------                                                                         
+|   0 | SELECT STATEMENT     |      |     1 |    12 |    10  (10)| 00:00:01 |                                                                         
+|   1 |  SORT AGGREGATE      |      |     1 |    12 |            |          |                                                                         
+|*  2 |   HASH JOIN          |      |   126 |  1512 |    10  (10)| 00:00:01 |                                                                         
+|*  3 |    HASH JOIN         |      |   251 |  2259 |     7  (15)| 00:00:01 |                                                                         
+|   4 |     TABLE ACCESS FULL| T2   |     7 |    21 |     3   (0)| 00:00:01 |                                                                         
+|   5 |     TABLE ACCESS FULL| T1   |   500 |  3000 |     3   (0)| 00:00:01 |                                                                         
+|   6 |    TABLE ACCESS FULL | T3   |     7 |    21 |     3   (0)| 00:00:01 |                                                                         
+-----------------------------------------------------------------------------                                                                         
+                                                                                                                                                      
+Predicate Information (identified by operation id):                                                                                                   
+---------------------------------------------------                                                                                                   
+                                                                                                                                                      
+   2 - access("T1"."VALUE2"="T3"."VALUE")                                                                                                             
+   3 - access("T1"."VALUE"="T2"."VALUE")                                                                                                              
+
+SQL> set autotrace off
+SQL> 
+SQL> -- in this case also, if you remove the histogram on the tables with unique values,
+SQL> -- the CBO uses the standard formula and gets back the exact cardinality.
+SQL> exec dbms_stats.gather_table_stats (user, 't2', method_opt=>'for all columns size 1', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> exec dbms_stats.gather_table_stats (user, 't3', method_opt=>'for all columns size 1', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> 
+SQL> set autotrace traceonly explain
+SQL> select count(*)
+  2    from t1, t2, t3
+  3   where t1.value  = t2.value
+  4  	and t1.value2 = t3.value;
+
+Execution Plan
+----------------------------------------------------------                                                                                            
+Plan hash value: 710168226                                                                                                                            
+                                                                                                                                                      
+-----------------------------------------------------------------------------                                                                         
+| Id  | Operation            | Name | Rows  | Bytes | Cost (%CPU)| Time     |                                                                         
+-----------------------------------------------------------------------------                                                                         
+|   0 | SELECT STATEMENT     |      |     1 |    12 |    10  (10)| 00:00:01 |                                                                         
+|   1 |  SORT AGGREGATE      |      |     1 |    12 |            |          |                                                                         
+|*  2 |   HASH JOIN          |      |   500 |  6000 |    10  (10)| 00:00:01 |                                                                         
+|   3 |    TABLE ACCESS FULL | T3   |     7 |    21 |     3   (0)| 00:00:01 |                                                                         
+|*  4 |    HASH JOIN         |      |   500 |  4500 |     7  (15)| 00:00:01 |                                                                         
+|   5 |     TABLE ACCESS FULL| T2   |     7 |    21 |     3   (0)| 00:00:01 |                                                                         
+|   6 |     TABLE ACCESS FULL| T1   |   500 |  3000 |     3   (0)| 00:00:01 |                                                                         
+-----------------------------------------------------------------------------                                                                         
+                                                                                                                                                      
+Predicate Information (identified by operation id):                                                                                                   
+---------------------------------------------------                                                                                                   
+                                                                                                                                                      
+   2 - access("T1"."VALUE2"="T3"."VALUE")                                                                                                             
+   4 - access("T1"."VALUE"="T2"."VALUE")                                                                                                              
+
+SQL> set autotrace off
+SQL> 
+SQL> spool off

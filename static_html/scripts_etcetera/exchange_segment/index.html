@@ -1,0 +1,54 @@
+<!--#include virtual="/ssi_pre_title.html" --> 
+<title>Alberto Dell'Era: Exchange segment</title>
+<!--#include virtual="/ssi_post_title.html" -->
+<br>
+A technique to replace all rows of a table that will be seen by readers as a delete+insert+commit, but as performant as a truncate+insert/*+append*/+commit.
+<br><br>
+<b>Outline</b>
+<br><br>
+You have a table
+<pre>
+create table t (x int, ...);
+</pre>
+create a "partitioned clone" of t with a single partition:
+<pre>
+create table t_stage 
+partition by range (x) (
+  partition p_all_rows values less than (maxvalue)
+)
+as
+select * from t where 1=0;
+</pre>
+then insert /*+append*/ the new rows in t_stage, commit, and then issue
+<pre>
+alter table t_stage
+exchange partition p_all_rows
+with table t
+including indexes
+without validation;
+</pre>
+The exchange table will make the new rows appear instantaneously (same effect of the commit in a conventional delete+insert+commit) and, most importantly, readers 
+that are currently reading when the exchange is issued will keep reading the <b>old</b> version of the rows until the last fetch of the current statement (ie, the "multiversion read consistency" will be preserved).
+<br><br>
+You can have indexes and constraints on the table, in which case, you have to create them on t_stage also as LOCAL indexes and USING LOCAL INDEX constraints (see the script below for examples).
+<br><br>
+Triggers defined on t and packages/procedures/function depending on t will <b>not</b> be invalidated by the command.<br>
+Obviously grants on t will be still there, too.
+<br><br>
+<b>How it works</b>
+<br><br>
+Partitions in Oracle are, essentially, just "regular tables" grouped together as a (partitioned) "super" table.<br>
+Local indexes are "regular indexes" defined on this "regular tables" (each "regular table" having its own "regular index").<br>
+So the partition p_all_rows is structurally identical to t - the exchange command will swap the table/indexes segments, and current readers will keep reading from the old table/indexes segments (now associated to p_all_rows).
+<br><br>
+<b>Useful for</b>
+<br><br>
+I've used it for maintaining an <i>interface table</i> to another system, read by users continuosly, and to be refreshed every day.
+<br><br>
+Another use is for <i>physical reorganization</i> of rows, when a simple ALTER TABLE MOVE won't help - eg you need to order the rows on disk to decrease the clustering factor of a frequently range-scanned critical index. The standard tecnique of cloning the table as empty, filling the clone, and then renaming it at the end would mean to recreate triggers and regrant privileges on the table (very error-prone and so something I do only at gunpoint) and probably recompiling packages dependants from the table. Using EXCHANGE TABLE, I was able to reorganize rows in t_stage, and exchange back the segment in milliseconds, preserving triggers etcetera on the table. Another advantage above renaming the table is that, if you forget an index, the EXCHANGE TABLE will tell you with a gracious error, which is much better than discovering it when "the system goes live again and performance down the drain" (a rhyme!). 
+<br><br>
+<b>Demonstration</b>
+<br><br>
+This <a href="exchange_segment.sql">script</a> (here is its <a href="exchange_segment.spool">log on 9.2.0.6</a>) demonstrates what I've said here; the demo considers a table with indexes, constraints, a trigger and a procedure using it.
+
+<!--#include virtual="/ssi_bottom.html" -->

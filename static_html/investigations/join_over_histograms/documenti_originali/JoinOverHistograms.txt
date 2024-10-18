@@ -1,0 +1,207 @@
+Last modification 24/3/2007
+
+A concise abstract of the algorithm.
+This is always 
+
+*********** definitions ************
+
+** popularity
+
+A value in an histogram, whether HB or FH, is defined "popular" if delta(EP) = EP - previous (EP) > 1
+
+Let popularity (EP) = 1 if EP - previous (EP) > 1, 0 otherwise
+
+** counts 
+
+Let counts(EP) = num_rows * delta(EP) / max(EP) = num_rows * delta(EP) / num_buckets
+
+Note that for FH, max(ep) = num_rows so counts = delta(EP).
+
+** definition of Join Histogram and Join Value Popularity
+
+Given the histograms on the join columns
+
+H1_HIST: 
+
+        EP      VALUE     COUNTS POPULARITY
+---------- ---------- ---------- ----------
+         0          0          0          0
+         1          9         10          0
+         2         10         10          0
+         4         20         20          1
+         5         40         10          0
+         6         50         10          0
+
+H2_HIST:
+
+        EP      VALUE     COUNTS POPULARITY
+---------- ---------- ---------- ----------
+         0          0          0          0
+         1          9         10          0
+         2         10         10          0
+         4         20         20          1
+         5         30         10          0
+         7         50         20          1
+
+The Join Histogram (JH) is 
+
+     VALUE  H1_COUNTS  H2_COUNTS H1_POPULARITY H2_POPULARITY JOIN_POPULARITY
+---------- ---------- ---------- ------------- ------------- ---------------
+         0          0          0             0             0               0
+         9         10         10             0             0               0
+        10         10         10             0             0               0
+        20         20         20             1             1               2
+        30          0         10             0             0               0
+        40         10          0             0             0               0
+        50         10         20             0             1               1
+
+Ie : consider the set union of H1_HIST.value and H2_HIST.value.
+Copy H1_HIST.counts (H2_HIST.counts) in H1_COUNTS (H2_COUNTS);
+if the value is not contained in the H1_HIST(H2_HIST) histogram, 
+let H1_COUNTS=0 (H2_COUNTS=0).
+
+Same for H1_HIST.POPULARITY and H1_POPULARITY (H2_POPULARITY).
+
+Let JOIN_POPULARITY = H1_POPULARITY + H2_POPULARITY.
+
+** definition of Chopped Join Histogram
+
+Let
+
+LHV = minmax (min of the max values) = min ( max(t1.value), max(t2.value) )
+HHV = maxmax (max of the max values) = max ( max(t1.value), max(t2.value) )
+LMV = minMV  (min Matching Value)    = min ( {value | t1.value = t2.value} )
+HMV = maxMV  (max Matching Value)    = max ( {value | t1.value = t2.value} )
+
+Note: could be equivalently defined in terms of H1_HIST, H2_HIST, JH.
+
+The Chopped Join Histogram (CJH) is simply the JH restricted to
+
+minMV <= JH.value <= minmax
+
+Also, let CJH_PLUS_2 being the CJH 
+plus the two buckets immediately following the minmax.
+
+*********** cardinality formula ************
+
+The cardinality is the sum of the following 4 contributions:
+
+** Contribution of buckets with JOIN_POPULARITY = 2 ("popular matching popular")
+
+   sum of 
+      h1_counts * h2_counts
+   of rows in the CJH with JOIN_POPULARITY = 2
+
+** Contribution of buckets with JOIN_POPULARITY = 1 ("popular not matching popular")
+ 
+   sum of (
+       decode ( h1_popularity, 1, h1_counts, num_rows(t1) * density(t1) )
+       *
+       decode ( h2_popularity, 1, h2_counts, num_rows(t2) * density(t2) )
+   )  
+   of rows in the CJH with JOIN_POPULARITY = 1
+      
+   That is "popular values contribute with their counts, 
+            unpopular values with num_rows * density"
+
+   Note that for FH, density = 0.5 / num_rows, hence num_rows * density = 0.5;
+   here's the source of the mysterious halving.    
+
+** Contribution of buckets with POPULARITY = 0 ("not-populars subtable")
+
+   Let 
+   num_rows_unpopular (table) = 
+   sum of counts
+   of rows in the histogram with POPULARITY = 0
+   that are represented in CJH_PLUS_2 
+    AND VALUE > minMV  
+
+   (why CJH_PLUS_2 and not CHJ ? probably a bug)
+
+   Note that does not matter whether the value matches or not in the other histogram,
+   or, a fortiori, if it matches with a popular value or not.
+   
+   Contribution is
+
+         decode ( num_rows_unpopular (t1), 0, num_rows(t1) / max_ep(t1), num_rows_unpopular (t1) ) 
+       * decode ( num_rows_unpopular (t2), 0, num_rows(t2) / max_ep(t2), num_rows_unpopular (t2) ) 
+       * min ( density (t1) , density (t2) )    
+
+            
+   Could be thought as the standard formula, 
+   rewritten in terms of densities,
+   applied to residual values (not popular at all).
+
+
+** Contribution of special cardinality 
+
+   (Probably a bug)	
+ 
+   if maxMV = minmax and minmax < maxmax
+    
+     if max (t1) = maxmax
+        decode (h2_popularity (value = minmax), 
+                1, h2_counts  (value = minmax) * num_rows(t1) * density (t1),
+                0)         
+     else /* max (t2) = maxmax */
+        decode (h1_popularity (value = minmax), 
+                1, h1_counts  (value = minmax) * num_rows(t2) * density (t2),
+                0)         
+     end if;
+ 
+   else
+    
+     0
+   
+   end if
+
+   In this special case, the highest value of the "shorter" table is considered
+   a "popular not matching a popular" value.
+
+** fallback to standard formula
+
+   Prologue: we know that the CBO uses the standard formula
+
+   num_rows (t1) * num_rows (t2) 
+     * 1 / max ( num_distinct (t1) , num_distinct (t2) )
+
+   when no histogram is collected.
+
+   There are two variants of this formula (check "Cost Based Oracle", page 278)
+   that differ only on their ability to detect no-overlaps over the min/max
+   range of the join columns.
+   The "8i" one doesn't check the no-overlap condition and always blindly
+   applies the formula; the "9i/10g" one returns 1 when the min/max ranges
+   don't overlap.
+   
+   This formula is used also when HB are collected: 
+
+   (a) if any table has num_rows <= 1 => 
+       back to standard formula of 9i/10g 
+
+   (b) let maxPV (max Popular Value) =
+           max value in CJH where JOIN_POPULARITY >= 1
+        
+       if   maxMV is null (no matching value)
+         or maxPV is null (no popular value)
+         or maxPV < minMV (all popular values < min matching value)
+       => back to standard formula of 8i
+
+      Could be rephrased as "back to standard formula of 8i if all popular
+       values are below the lowest matching value, or of course,
+       if no popular or matching value exist."
+
+  Additionally, if the formula happens to produce a result of exactly zero
+  (something you may observe only if you set density=0 manually probably)
+  a sanity check kicks in and the standard formula of 9i/10g is used instead.
+  If the formula results is close to zero but not zero, normal rounding to 1 applies.
+       
+*** caveat due to Wolfgang's bug
+
+We know that swapping the LHS and the RHS of the = join predicate
+sometimes changes the CBO join cardinality.
+Since we can't say which one is the correct cardinality,
+and which one is the bugged one, by definition we can't say that
+we have "discovered the formula in full".
+Could be that the bugged one almost always show up, and sometimes
+the correct one surfaces ...

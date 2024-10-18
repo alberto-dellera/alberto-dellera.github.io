@@ -1,0 +1,431 @@
+SQL> 
+SQL> col value form 99
+SQL> 
+SQL> -- some views to format dba_histograms for our example tables
+SQL> create or replace view formatted_hist_t1 as
+  2  with hist1 as (
+  3    select endpoint_number ep, endpoint_value value
+  4  	 from user_histograms
+  5  	where table_name  = 'T1'
+  6  	  and column_name = 'VALUE'
+  7  ), hist2 as (
+  8    select ep, value,
+  9  	      lag (ep) over (order by ep) prev_ep,
+ 10  	      max (ep) over ()		  max_ep
+ 11  	 from hist1
+ 12  )
+ 13  select value, ep,
+ 14  	    (select num_rows from user_tables where table_name	= 'T1')
+ 15  	    * (ep - nvl (prev_ep, 0))
+ 16  	    / max_ep as counts,
+ 17  	    decode (ep - nvl (prev_ep, 0), 0, 0, 1, 0, 1) as popularity
+ 18   from hist2
+ 19  order by ep;
+
+View created.
+
+SQL> 
+SQL> create or replace view formatted_hist_t2 as
+  2  with hist1 as (
+  3    select endpoint_number ep, endpoint_value value
+  4  	 from user_histograms
+  5  	where table_name  = 'T2'
+  6  	  and column_name = 'VALUE'
+  7  ), hist2 as (
+  8    select ep, value,
+  9  	      lag (ep) over (order by ep) prev_ep,
+ 10  	      max (ep) over ()		  max_ep
+ 11  	 from hist1
+ 12  )
+ 13  select value, ep,
+ 14  	    (select num_rows from user_tables where table_name	= 'T2')
+ 15  	    * (ep - nvl (prev_ep, 0))
+ 16  	    / max_ep as counts,
+ 17  	    decode (ep - nvl (prev_ep, 0), 0, 0, 1, 0, 1) as popularity
+ 18   from hist2
+ 19  order by ep;
+
+View created.
+
+SQL> 
+SQL> -- table t1 with its Frequency histogram collected
+SQL> create table t1 (value number);
+
+Table created.
+
+SQL> insert into t1(value) select 10 from dual connect by level <= 2;
+
+2 rows created.
+
+SQL> insert into t1(value) select 20 from dual connect by level <= 100;
+
+100 rows created.
+
+SQL> 
+SQL> exec dbms_stats.gather_table_stats (user, 't1', method_opt=>'for all columns size 254', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> select value from t1 order by value;
+
+VALUE                                                                                                                                                 
+-----                                                                                                                                                 
+   10                                                                                                                                                 
+   10                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+
+102 rows selected.
+
+SQL> select value, count(*) from t1 group by value order by value;
+
+VALUE   COUNT(*)                                                                                                                                      
+----- ----------                                                                                                                                      
+   10          2                                                                                                                                      
+   20        100                                                                                                                                      
+
+SQL> select * from formatted_hist_t1;
+
+VALUE         EP     COUNTS POPULARITY                                                                                                                
+----- ---------- ---------- ----------                                                                                                                
+   10          2          2          1                                                                                                                
+   20        102        100          1                                                                                                                
+
+SQL> 
+SQL> -- table t2 with its Frequency histogram collected
+SQL> create table t2 (value number);
+
+Table created.
+
+SQL> insert into t2(value) select  0 from dual connect by level <= 100;
+
+100 rows created.
+
+SQL> insert into t2(value) select 20 from dual connect by level <= 2;
+
+2 rows created.
+
+SQL> insert into t2(value) values (99);
+
+1 row created.
+
+SQL> 
+SQL> exec dbms_stats.gather_table_stats (user, 't2', method_opt=>'for all columns size 254', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> select value from t2 order by value;
+
+VALUE                                                                                                                                                 
+-----                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+    0                                                                                                                                                 
+   20                                                                                                                                                 
+   20                                                                                                                                                 
+   99                                                                                                                                                 
+
+103 rows selected.
+
+SQL> select value, count(*) from t2 group by value order by value;
+
+VALUE   COUNT(*)                                                                                                                                      
+----- ----------                                                                                                                                      
+    0        100                                                                                                                                      
+   20          2                                                                                                                                      
+   99          1                                                                                                                                      
+
+SQL> select * from formatted_hist_t2;
+
+VALUE         EP     COUNTS POPULARITY                                                                                                                
+----- ---------- ---------- ----------                                                                                                                
+    0        100        100          1                                                                                                                
+   20        102          2          1                                                                                                                
+   99        103          1          0                                                                                                                
+
+SQL> 
+SQL> -- table statistics
+SQL> col table_name form a5
+SQL> select t.table_name, t.num_rows, c.density, t.num_rows * c.density "num_rows*density", t.num_rows / c.num_distinct
+  2    from user_tables t, user_tab_columns c
+  3   where t.table_name = c.table_name
+  4  	and t.table_name in ('T1','T2')
+  5  	and c.column_name = 'VALUE'
+  6    order by table_name;
+
+TABLE   NUM_ROWS    DENSITY num_rows*density T.NUM_ROWS/C.NUM_DISTINCT                                                                                
+----- ---------- ---------- ---------------- -------------------------                                                                                
+T1           102 .004901961               .5                        51                                                                                
+T2           103 .004854369               .5                34.3333333                                                                                
+
+SQL> 
+SQL> -- The Join Histogram
+SQL> create or replace view join_histogram as
+  2  select decode (lhs.popularity, 1, 'POP', 0, 'UN', '-') as lhs_popularity,
+  3  	    nvl(to_char(lhs.counts),'-')		    as lhs_counts,
+  4  	    nvl(lhs.value, rhs.value)			    as value,
+  5  	    nvl(to_char(rhs.counts),'-')		    as rhs_counts,
+  6  	    decode (rhs.popularity, 1, 'POP', 0, 'UN', '-') as rhs_popularity,
+  7  	    nvl(lhs.popularity,0) + nvl(rhs.popularity,0)   as join_popularity
+  8   from (select * from formatted_hist_t1) lhs -- select * necessary for "table does not exist" workaround
+  9  	   full outer join
+ 10  	   (select * from formatted_hist_t2) rhs -- select * necessary for "table does not exist" workaround
+ 11  	on (lhs.value = rhs.value)
+ 12  order by nvl(lhs.value, rhs.value);
+
+View created.
+
+SQL> 
+SQL> col lhs_popularity form a3
+SQL> col lhs_counts	form a5
+SQL> col value		form 99
+SQL> col rhs_counts	form a5
+SQL> col rhs_popularity form a3
+SQL> select * from join_histogram;
+
+LHS LHS_C VALUE RHS_C RHS JOIN_POPULARITY                                                                                                             
+--- ----- ----- ----- --- ---------------                                                                                                             
+-   -         0 100   POP               1                                                                                                             
+POP 2        10 -     -                 1                                                                                                             
+POP 100      20 2     POP               2                                                                                                             
+-   -        99 1     UN                0                                                                                                             
+
+SQL> 
+SQL> -- uncomment the following two lines if you want to calculate the contributors
+SQL> -- using the formula implemented in pl/sql and sql
+SQL> -- You need of course to install the join_over_histograms package
+SQL> -- workaround for bug 4626732, 5752903 "ORA-07445 [ACCESS_VIOLATION] [_evaopn2+153]"
+SQL> --alter session set "_optimizer_native_full_outer_join"=force;
+SQL> --select join_over_histograms.get ('t1', 'value', 't2', 'value') from dual;
+SQL> 
+SQL> select count(*) as real_cardinality
+  2    from t1, t2
+  3   where t1.value = t2.value;
+
+REAL_CARDINALITY                                                                                                                                      
+----------------                                                                                                                                      
+             200                                                                                                                                      
+
+SQL> 
+SQL> set autotrace traceonly explain
+SQL> select count(*)
+  2    from t1, t2
+  3   where t1.value = t2.value;
+
+Execution Plan
+----------------------------------------------------------                                                                                            
+Plan hash value: 906334482                                                                                                                            
+                                                                                                                                                      
+----------------------------------------------------------------------------                                                                          
+| Id  | Operation           | Name | Rows  | Bytes | Cost (%CPU)| Time     |                                                                          
+----------------------------------------------------------------------------                                                                          
+|   0 | SELECT STATEMENT    |      |     1 |     5 |     7  (15)| 00:00:01 |                                                                          
+|   1 |  SORT AGGREGATE     |      |     1 |     5 |            |          |                                                                          
+|*  2 |   HASH JOIN         |      |   251 |  1255 |     7  (15)| 00:00:01 |                                                                          
+|   3 |    TABLE ACCESS FULL| T1   |   102 |   306 |     3   (0)| 00:00:01 |                                                                          
+|   4 |    TABLE ACCESS FULL| T2   |   103 |   206 |     3   (0)| 00:00:01 |                                                                          
+----------------------------------------------------------------------------                                                                          
+                                                                                                                                                      
+Predicate Information (identified by operation id):                                                                                                   
+---------------------------------------------------                                                                                                   
+                                                                                                                                                      
+   2 - access("T1"."VALUE"="T2"."VALUE")                                                                                                              
+
+SQL> set autotrace off
+SQL> 
+SQL> spool off

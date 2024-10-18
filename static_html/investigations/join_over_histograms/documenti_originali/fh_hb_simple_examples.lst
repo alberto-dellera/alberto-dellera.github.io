@@ -1,0 +1,613 @@
+SQL> 
+SQL> -- a view to format dba_histograms for our example table
+SQL> create or replace view formatted_hist as
+  2  with hist1 as (
+  3    select endpoint_number ep, endpoint_value value
+  4  	 from user_histograms
+  5  	where table_name  = 'T1'
+  6  	  and column_name = 'VALUE'
+  7  ), hist2 as (
+  8    select ep, value,
+  9  	      lag (ep) over (order by ep) prev_ep,
+ 10  	      max (ep) over ()		  max_ep
+ 11  	 from hist1
+ 12  )
+ 13  select value, ep,
+ 14  	    (select num_rows from user_tables where table_name	= 'T1')
+ 15  	    * (ep - nvl (prev_ep, 0))
+ 16  	    / max_ep as counts,
+ 17  	    decode (ep - nvl (prev_ep, 0), 0, 0, 1, 0, 1) as popularity
+ 18   from hist2
+ 19  order by ep;
+
+View created.
+
+SQL> 
+SQL> -- a Frequency histogram
+SQL> create table t1 (value int);
+
+Table created.
+
+SQL> 
+SQL> insert into t1(value) select 1 from dual connect by level <= 2;
+
+2 rows created.
+
+SQL> insert into t1(value) select 2 from dual connect by level <= 1;
+
+1 row created.
+
+SQL> insert into t1(value) select 3 from dual connect by level <= 4;
+
+4 rows created.
+
+SQL> 
+SQL> exec dbms_stats.gather_table_stats (user, 't1', method_opt=>'for all columns size 254', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> 
+SQL> select value from t1 order by value;
+
+     VALUE                                                                                                                                            
+----------                                                                                                                                            
+         1                                                                                                                                            
+         1                                                                                                                                            
+         2                                                                                                                                            
+         3                                                                                                                                            
+         3                                                                                                                                            
+         3                                                                                                                                            
+         3                                                                                                                                            
+
+7 rows selected.
+
+SQL> 
+SQL> select * from formatted_hist;
+
+     VALUE         EP     COUNTS POPULARITY                                                                                                           
+---------- ---------- ---------- ----------                                                                                                           
+         1          2          2          1                                                                                                           
+         2          3          1          0                                                                                                           
+         3          7          4          1                                                                                                           
+
+SQL> 
+SQL> -- an Heigth-Based histogram with no popular values
+SQL> drop table t1;
+
+Table dropped.
+
+SQL> create table t1 as select rownum as value from dual connect by level <= 9;
+
+Table created.
+
+SQL> 
+SQL> exec dbms_stats.gather_table_stats (user, 't1', method_opt=>'for all columns size 3', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> 
+SQL> select value from t1 order by value;
+
+     VALUE                                                                                                                                            
+----------                                                                                                                                            
+         1                                                                                                                                            
+         2                                                                                                                                            
+         3                                                                                                                                            
+         4                                                                                                                                            
+         5                                                                                                                                            
+         6                                                                                                                                            
+         7                                                                                                                                            
+         8                                                                                                                                            
+         9                                                                                                                                            
+
+9 rows selected.
+
+SQL> 
+SQL> select * from formatted_hist;
+
+     VALUE         EP     COUNTS POPULARITY                                                                                                           
+---------- ---------- ---------- ----------                                                                                                           
+         1          0          0          0                                                                                                           
+         3          1          3          0                                                                                                           
+         6          2          3          0                                                                                                           
+         9          3          3          0                                                                                                           
+
+SQL> 
+SQL> -- an Heigth-Based histogram with popular values
+SQL> update t1 set value = 9 where value >= 5;
+
+5 rows updated.
+
+SQL> 
+SQL> exec dbms_stats.gather_table_stats (user, 't1', method_opt=>'for all columns size 3', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> 
+SQL> select value from t1 order by value;
+
+     VALUE                                                                                                                                            
+----------                                                                                                                                            
+         1                                                                                                                                            
+         2                                                                                                                                            
+         3                                                                                                                                            
+         4                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+
+9 rows selected.
+
+SQL> 
+SQL> select * from formatted_hist;
+
+     VALUE         EP     COUNTS POPULARITY                                                                                                           
+---------- ---------- ---------- ----------                                                                                                           
+         1          0          0          0                                                                                                           
+         3          1          3          0                                                                                                           
+         9          3          6          1                                                                                                           
+
+SQL> 
+SQL> -- different data that give the same Heigth-Based histogram with value "6" unpopular
+SQL> 
+SQL> drop table t1;
+
+Table dropped.
+
+SQL> create table t1 as select rownum as value from dual connect by level <= 9;
+
+Table created.
+
+SQL> 
+SQL> exec dbms_stats.gather_table_stats (user, 't1', method_opt=>'for all columns size 3', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> select value from t1 order by value;
+
+     VALUE                                                                                                                                            
+----------                                                                                                                                            
+         1                                                                                                                                            
+         2                                                                                                                                            
+         3                                                                                                                                            
+         4                                                                                                                                            
+         5                                                                                                                                            
+         6                                                                                                                                            
+         7                                                                                                                                            
+         8                                                                                                                                            
+         9                                                                                                                                            
+
+9 rows selected.
+
+SQL> select * from formatted_hist;
+
+     VALUE         EP     COUNTS POPULARITY                                                                                                           
+---------- ---------- ---------- ----------                                                                                                           
+         1          0          0          0                                                                                                           
+         3          1          3          0                                                                                                           
+         6          2          3          0                                                                                                           
+         9          3          3          0                                                                                                           
+
+SQL> 
+SQL> update t1 set value = 6 where value = 7;
+
+1 row updated.
+
+SQL> exec dbms_stats.gather_table_stats (user, 't1', method_opt=>'for all columns size 3', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> select value from t1 order by value;
+
+     VALUE                                                                                                                                            
+----------                                                                                                                                            
+         1                                                                                                                                            
+         2                                                                                                                                            
+         3                                                                                                                                            
+         4                                                                                                                                            
+         5                                                                                                                                            
+         6                                                                                                                                            
+         6                                                                                                                                            
+         8                                                                                                                                            
+         9                                                                                                                                            
+
+9 rows selected.
+
+SQL> select * from formatted_hist;
+
+     VALUE         EP     COUNTS POPULARITY                                                                                                           
+---------- ---------- ---------- ----------                                                                                                           
+         1          0          0          0                                                                                                           
+         3          1          3          0                                                                                                           
+         6          2          3          0                                                                                                           
+         9          3          3          0                                                                                                           
+
+SQL> 
+SQL> update t1 set value = 6 where value = 8;
+
+1 row updated.
+
+SQL> exec dbms_stats.gather_table_stats (user, 't1', method_opt=>'for all columns size 3', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> select value from t1 order by value;
+
+     VALUE                                                                                                                                            
+----------                                                                                                                                            
+         1                                                                                                                                            
+         2                                                                                                                                            
+         3                                                                                                                                            
+         4                                                                                                                                            
+         5                                                                                                                                            
+         6                                                                                                                                            
+         6                                                                                                                                            
+         6                                                                                                                                            
+         9                                                                                                                                            
+
+9 rows selected.
+
+SQL> select * from formatted_hist;
+
+     VALUE         EP     COUNTS POPULARITY                                                                                                           
+---------- ---------- ---------- ----------                                                                                                           
+         1          0          0          0                                                                                                           
+         3          1          3          0                                                                                                           
+         6          2          3          0                                                                                                           
+         9          3          3          0                                                                                                           
+
+SQL> 
+SQL> update t1 set value = 6 where value = 5;
+
+1 row updated.
+
+SQL> exec dbms_stats.gather_table_stats (user, 't1', method_opt=>'for all columns size 3', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> select value from t1 order by value;
+
+     VALUE                                                                                                                                            
+----------                                                                                                                                            
+         1                                                                                                                                            
+         2                                                                                                                                            
+         3                                                                                                                                            
+         4                                                                                                                                            
+         6                                                                                                                                            
+         6                                                                                                                                            
+         6                                                                                                                                            
+         6                                                                                                                                            
+         9                                                                                                                                            
+
+9 rows selected.
+
+SQL> select * from formatted_hist;
+
+     VALUE         EP     COUNTS POPULARITY                                                                                                           
+---------- ---------- ---------- ----------                                                                                                           
+         1          0          0          0                                                                                                           
+         3          1          3          0                                                                                                           
+         6          2          3          0                                                                                                           
+         9          3          3          0                                                                                                           
+
+SQL> 
+SQL> update t1 set value = 6 where value = 4;
+
+1 row updated.
+
+SQL> exec dbms_stats.gather_table_stats (user, 't1', method_opt=>'for all columns size 3', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> select value from t1 order by value;
+
+     VALUE                                                                                                                                            
+----------                                                                                                                                            
+         1                                                                                                                                            
+         2                                                                                                                                            
+         3                                                                                                                                            
+         6                                                                                                                                            
+         6                                                                                                                                            
+         6                                                                                                                                            
+         6                                                                                                                                            
+         6                                                                                                                                            
+         9                                                                                                                                            
+
+9 rows selected.
+
+SQL> select * from formatted_hist;
+
+     VALUE         EP     COUNTS POPULARITY                                                                                                           
+---------- ---------- ---------- ----------                                                                                                           
+         1          0          0          0                                                                                                           
+         3          1          3          0                                                                                                           
+         6          2          3          0                                                                                                           
+         9          3          3          0                                                                                                           
+
+SQL> 
+SQL> drop table t1;
+
+Table dropped.
+
+SQL> create table t1 as select rownum as value from dual connect by level <= 9;
+
+Table created.
+
+SQL> update t1 set value = 6 where value between 5 and 7;
+
+3 rows updated.
+
+SQL> exec dbms_stats.gather_table_stats (user, 't1', method_opt=>'for all columns size 3', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> select value from t1 order by value;
+
+     VALUE                                                                                                                                            
+----------                                                                                                                                            
+         1                                                                                                                                            
+         2                                                                                                                                            
+         3                                                                                                                                            
+         4                                                                                                                                            
+         6                                                                                                                                            
+         6                                                                                                                                            
+         6                                                                                                                                            
+         8                                                                                                                                            
+         9                                                                                                                                            
+
+9 rows selected.
+
+SQL> select * from formatted_hist;
+
+     VALUE         EP     COUNTS POPULARITY                                                                                                           
+---------- ---------- ---------- ----------                                                                                                           
+         1          0          0          0                                                                                                           
+         3          1          3          0                                                                                                           
+         6          2          3          0                                                                                                           
+         9          3          3          0                                                                                                           
+
+SQL> 
+SQL> -- different data that give the same Heigth-Based histogram with value "9" popular
+SQL> drop table t1;
+
+Table dropped.
+
+SQL> create table t1 as select rownum as value from dual connect by level <= 12;
+
+Table created.
+
+SQL> 
+SQL> update t1 set value = 9 where value between 6 and 8;
+
+3 rows updated.
+
+SQL> exec dbms_stats.gather_table_stats (user, 't1', method_opt=>'for all columns size 4', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> select value from t1 order by value;
+
+     VALUE                                                                                                                                            
+----------                                                                                                                                            
+         1                                                                                                                                            
+         2                                                                                                                                            
+         3                                                                                                                                            
+         4                                                                                                                                            
+         5                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+        10                                                                                                                                            
+        11                                                                                                                                            
+        12                                                                                                                                            
+
+12 rows selected.
+
+SQL> select * from formatted_hist;
+
+     VALUE         EP     COUNTS POPULARITY                                                                                                           
+---------- ---------- ---------- ----------                                                                                                           
+         1          0          0          0                                                                                                           
+         3          1          3          0                                                                                                           
+         9          3          6          1                                                                                                           
+        12          4          3          0                                                                                                           
+
+SQL> 
+SQL> update t1 set value = 9 where value = 10;
+
+1 row updated.
+
+SQL> exec dbms_stats.gather_table_stats (user, 't1', method_opt=>'for all columns size 4', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> select value from t1 order by value;
+
+     VALUE                                                                                                                                            
+----------                                                                                                                                            
+         1                                                                                                                                            
+         2                                                                                                                                            
+         3                                                                                                                                            
+         4                                                                                                                                            
+         5                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+        11                                                                                                                                            
+        12                                                                                                                                            
+
+12 rows selected.
+
+SQL> select * from formatted_hist;
+
+     VALUE         EP     COUNTS POPULARITY                                                                                                           
+---------- ---------- ---------- ----------                                                                                                           
+         1          0          0          0                                                                                                           
+         3          1          3          0                                                                                                           
+         9          3          6          1                                                                                                           
+        12          4          3          0                                                                                                           
+
+SQL> 
+SQL> update t1 set value = 9 where value = 11;
+
+1 row updated.
+
+SQL> exec dbms_stats.gather_table_stats (user, 't1', method_opt=>'for all columns size 4', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> select value from t1 order by value;
+
+     VALUE                                                                                                                                            
+----------                                                                                                                                            
+         1                                                                                                                                            
+         2                                                                                                                                            
+         3                                                                                                                                            
+         4                                                                                                                                            
+         5                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+        12                                                                                                                                            
+
+12 rows selected.
+
+SQL> select * from formatted_hist;
+
+     VALUE         EP     COUNTS POPULARITY                                                                                                           
+---------- ---------- ---------- ----------                                                                                                           
+         1          0          0          0                                                                                                           
+         3          1          3          0                                                                                                           
+         9          3          6          1                                                                                                           
+        12          4          3          0                                                                                                           
+
+SQL> 
+SQL> update t1 set value = 9 where value = 5;
+
+1 row updated.
+
+SQL> exec dbms_stats.gather_table_stats (user, 't1', method_opt=>'for all columns size 4', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> select value from t1 order by value;
+
+     VALUE                                                                                                                                            
+----------                                                                                                                                            
+         1                                                                                                                                            
+         2                                                                                                                                            
+         3                                                                                                                                            
+         4                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+        12                                                                                                                                            
+
+12 rows selected.
+
+SQL> select * from formatted_hist;
+
+     VALUE         EP     COUNTS POPULARITY                                                                                                           
+---------- ---------- ---------- ----------                                                                                                           
+         1          0          0          0                                                                                                           
+         3          1          3          0                                                                                                           
+         9          3          6          1                                                                                                           
+        12          4          3          0                                                                                                           
+
+SQL> 
+SQL> update t1 set value = 9 where value = 4;
+
+1 row updated.
+
+SQL> exec dbms_stats.gather_table_stats (user, 't1', method_opt=>'for all columns size 4', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> select value from t1 order by value;
+
+     VALUE                                                                                                                                            
+----------                                                                                                                                            
+         1                                                                                                                                            
+         2                                                                                                                                            
+         3                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+        12                                                                                                                                            
+
+12 rows selected.
+
+SQL> select * from formatted_hist;
+
+     VALUE         EP     COUNTS POPULARITY                                                                                                           
+---------- ---------- ---------- ----------                                                                                                           
+         1          0          0          0                                                                                                           
+         3          1          3          0                                                                                                           
+         9          3          6          1                                                                                                           
+        12          4          3          0                                                                                                           
+
+SQL> 
+SQL> drop table t1;
+
+Table dropped.
+
+SQL> create table t1 as select rownum as value from dual connect by level <= 12;
+
+Table created.
+
+SQL> 
+SQL> update t1 set value = 9 where value between 5 and 10;
+
+6 rows updated.
+
+SQL> exec dbms_stats.gather_table_stats (user, 't1', method_opt=>'for all columns size 4', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> select value from t1 order by value;
+
+     VALUE                                                                                                                                            
+----------                                                                                                                                            
+         1                                                                                                                                            
+         2                                                                                                                                            
+         3                                                                                                                                            
+         4                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+        11                                                                                                                                            
+        12                                                                                                                                            
+
+12 rows selected.
+
+SQL> select * from formatted_hist;
+
+     VALUE         EP     COUNTS POPULARITY                                                                                                           
+---------- ---------- ---------- ----------                                                                                                           
+         1          0          0          0                                                                                                           
+         3          1          3          0                                                                                                           
+         9          3          6          1                                                                                                           
+        12          4          3          0                                                                                                           
+
+SQL> 
+SQL> spool off

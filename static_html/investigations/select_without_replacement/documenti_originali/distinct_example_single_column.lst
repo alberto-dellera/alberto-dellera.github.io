@@ -1,0 +1,62 @@
+SQL> 
+SQL> -- end of initialization section
+SQL> 
+SQL> drop table t;
+
+Table dropped.
+
+SQL> 
+SQL> create table t
+  2  as
+  3  select mod (rownum-1, 70) as x, 40 + mod (rownum-1, 90) as filter
+  4    from dual connect by level <= 10000;
+
+Table created.
+
+SQL> 
+SQL> exec dbms_stats.gather_table_stats (user, 't', cascade=>true, method_opt => 'for columns x size 1, columns filter size 254', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> 
+SQL> alter session set events '10053 trace name context forever, level 1';
+
+Session altered.
+
+SQL> set autotrace traceonly explain
+SQL> select distinct x
+  2    from t
+  3   where filter = 42;
+
+Execution Plan
+----------------------------------------------------------
+   0      SELECT STATEMENT Optimizer=ALL_ROWS (Cost=6 Card=56 Bytes=336)
+   1    0   SORT (UNIQUE) (Cost=6 Card=56 Bytes=336)
+   2    1     TABLE ACCESS (FULL) OF 'T' (Cost=4 Card=112 Bytes=672)
+
+
+
+SQL> set autotrace off
+SQL> alter session set events '10053 trace name context off';
+
+Session altered.
+
+SQL> 
+SQL> select t.table_name, c.column_name, c.num_distinct, c.num_buckets,
+  2         swru ( c.num_distinct, 112, t.num_rows ) f_num_distinct
+  3   from user_tab_columns c, user_tables t
+  4   where t.table_name in ('T')
+  5     and t.table_name = c.table_name
+  6     and c.column_name in ('X')
+  7   order by table_name, column_name;
+
+TABLE_NAME           COLUMN_NAME          NUM_DISTINCT NUM_BUCKETS F_NUM_DISTINCT
+-------------------- -------------------- ------------ ----------- --------------
+T                    X                              70           1     56.1555023
+
+1 row selected.
+
+SQL> 
+SQL> doc
+SQL> 
+SQL> spool off

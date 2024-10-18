@@ -1,0 +1,52 @@
+<!--#include virtual="/ssi_pre_title.html" --> 
+<title>Alberto Dell'Era: Using as-of-scn views to share a consistent image between db-link connections</title>
+<!--#include virtual="/ssi_post_title.html" -->
+<br>
+This technique illustrates how to have N connections through a db-link that sees the same <i>consistent image</i> of the remote database, ie the (committed) state of the remote database at the same point in time.
+<br><br>
+It's very easy - in the remote database, create as-of-scn (or as-of-timestamp) views for the tables you're interested in, using the same SCN (or timestamp):
+<pre>
+create or replace view t1_scn_view as select * from t1 as of scn 1234;
+create or replace view t2_scn_view as select * from t2 as of scn 1234;
+...
+create or replace view tK_scn_view as select * from tK as of scn 1234;
+</pre>
+And then have the N connections read from the tK_scn_view views instead of the tK tables.
+<br><br>
+<i>
+Note: we need to create these remote views since AS OF SCN is not supported for sql statements referencing remote objects.<br>
+Setting the transaction isolation level to SERIALIZABLE will allow us to see a consistent image, but not to share it between different connections.
+</i>
+<br><br>
+The following scripts illustrate the technique:<br>
+<a href="as_of_scn_views_setup.sql">as_of_scn_views_setup.sql</a> (here's its <a href="as_of_scn_views_setup.spool">spool on 9.2.0.6</a>) creates the remote tables, and a remote package to create as-of-scn views on the fly;<br>
+<a href="as_of_scn_views.sql">as_of_scn_views.sql</a> (here's its <a href="as_of_scn_views.spool">spool on 9.2.0.6</a>) uses the remote package to replicate the tables consistently.
+<br><br>
+I've used it for:
+<br><br>
+<b>parallelizing consistent refreshes from remote database</b><br>
+I needed to replicate a set of N tables from a remote database, and the replica had to be <i>consistent</i>, ie the local tables had to be the copy of the remote ones as they existed at the same point in time (there were FKs between them).
+<br><br>
+For sure, I'd be better off using one of the tools Oracle provides us for replication:<br>
+a) Streams<br>
+b) Materialized Views (aka Snapshots) Refresh Groups<br>
+c) Change Data Capture (CDC)<br>
+But Streams and CDC were refused by the remote database DBA team (for good reasons, they wanted to investigate and test them deeply before introducing these new features in their mission-critical instance).<br>
+This left only Refresh Groups to consider.<br>
+"Fast" incremental refreshes were going to be slower than complete refreshes, given the rate of change between refreshes.<br>
+But complete refreshes of Refresh Groups make a delete of the local tables, followed by a (conventional) insert-as-select from remote; this of course produces a lot of undo and redo, doesn't allow for direct-path insert, and for nologging operations (and it was ok for me to loose recoverability of the local tables).
+<br><br>
+Furthermore, since no one was going to read the local tables during refresh, i didn't need <i>local</i> consistency; it was ok for the local tables to become empty, and then fill up, each one in a separate transaction.
+<br><br>
+End of the story - my refresh process became a creation of the as-of-scn views, followed by the spawning of N jobs, each one performing:<br>
+1) truncate table tK_local; (tK_local being NOLOGGING tables)<br>
+2) insert /*+ append */ into tK_local as select * from tK_scn_view@db_link;<br>
+3) commit.
+<br><br>
+That's illustrated in the scripts provided above (serially, without the jobs).
+<br><br>
+Possible variations: you could also have N jobs reading from the same table (eg one for each partition), or joining/aggregating the as-of-scn views - and then direct-path inserting into the nologging local tables.<br>
+Since it's a direct-path operation, you may enable table compression if useful.<br>
+Obviously, the standard trick to put indexes in UNUSABLE state, and then rebuild them at the end of the insert-append, may be used also.<br>
+
+<!--#include virtual="/ssi_bottom.html" -->

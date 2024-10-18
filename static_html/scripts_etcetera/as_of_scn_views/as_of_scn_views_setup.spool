@@ -1,0 +1,63 @@
+dellera@ORACLE9I> 
+dellera@ORACLE9I> create table t1 (x int);
+
+Table created.
+
+dellera@ORACLE9I> create table t2 (x int);
+
+Table created.
+
+dellera@ORACLE9I> 
+dellera@ORACLE9I> create or replace package as_of_scn_views_pkg is
+  2  
+  3  -- get the current SCN
+  4  function get_remote_scn return number;
+  5  
+  6  -- create an as-of-scn view reading at the point in time
+  7  -- defined by the parameter p_as_of_scn
+  8  procedure create_as_of_scn_view (
+  9    p_table_name varchar2,
+ 10    p_view_name  varchar2,
+ 11    p_as_of_scn  number
+ 12  );
+ 13  
+ 14  end as_of_scn_views_pkg;
+ 15  /
+
+Package created.
+
+dellera@ORACLE9I> show errors;
+No errors.
+dellera@ORACLE9I> 
+dellera@ORACLE9I> create or replace package body as_of_scn_views_pkg is
+  2  
+  3  function get_remote_scn return number is
+  4  begin
+  5    return sys.dbms_flashback.get_system_change_number;
+  6  end get_remote_scn;
+  7  
+  8  procedure create_as_of_scn_view (
+  9    p_table_name varchar2,
+ 10    p_view_name  varchar2,
+ 11    p_as_of_scn  number)
+ 12  is
+ 13    l_stmt long;
+ 14  begin
+ 15    l_stmt := 'create or replace view ' || p_view_name ||
+ 16  		  ' as select * from ' || p_table_name || ' as of scn ' || p_as_of_scn;
+ 17    dbms_output.put_line ('executing: '||l_stmt);
+ 18    execute immediate l_stmt;
+ 19  exception
+ 20    when others then
+ 21  	 raise_application_error (-20001, sqlerrm||' while creating '|| p_view_name);
+ 22  end create_as_of_scn_view;
+ 23  
+ 24  end as_of_scn_views_pkg;
+ 25  /
+
+Package body created.
+
+dellera@ORACLE9I> show errors;
+No errors.
+dellera@ORACLE9I> 
+dellera@ORACLE9I> spool off

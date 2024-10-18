@@ -1,0 +1,131 @@
+SQL> 
+SQL> --------------------------
+SQL> -- check correctnes against uniform die
+SQL> --------------------------
+SQL> 
+SQL> -- switch to uniform P(s,1) die
+SQL> delete from die;
+
+6 rows deleted.
+
+SQL> insert into die (face_id, face_value, probability) values (1, 1, 1/6);
+
+1 row created.
+
+SQL> insert into die (face_id, face_value, probability) values (2, 2, 1/6);
+
+1 row created.
+
+SQL> insert into die (face_id, face_value, probability) values (3, 3, 1/6);
+
+1 row created.
+
+SQL> insert into die (face_id, face_value, probability) values (4, 4, 1/6);
+
+1 row created.
+
+SQL> insert into die (face_id, face_value, probability) values (5, 5, 1/6);
+
+1 row created.
+
+SQL> insert into die (face_id, face_value, probability) values (6, 6, 1/6);
+
+1 row created.
+
+SQL> commit;
+
+Commit complete.
+
+SQL> 
+SQL> -- fill fft_test with outputs
+SQL> exec fft_test_p (1, 20, 1);
+
+PL/SQL procedure successfully completed.
+
+SQL> 
+SQL> -- set probability_exact to exact probability from formula
+SQL> update fft_test set probability_exact = p_s_n_classic (s, N, 6);
+
+1720 rows updated.
+
+SQL> commit;
+
+Commit complete.
+
+SQL> 
+SQL> -- return errors (allowing for small rounding errors)
+SQL> select * from fft_test where abs (probability-probability_exact) > 1e6 order by N, s;
+
+no rows selected
+
+SQL> 
+SQL> --------------------------
+SQL> -- check correctnes of FFT implementation against FT definition
+SQL> --------------------------
+SQL> 
+SQL> -- build a random P(s,1)
+SQL> exec dbms_random.seed (0);
+
+PL/SQL procedure successfully completed.
+
+SQL> delete from die;
+
+6 rows deleted.
+
+SQL> insert into die (face_id, face_value, probability)
+  2  select rownum, rownum*2, dbms_random.value (0, 1)
+  3    from dual connect by level <= 10;
+
+10 rows created.
+
+SQL> update die set probability = probability / (select sum(probability) from die);
+
+10 rows updated.
+
+SQL> commit;
+
+Commit complete.
+
+SQL> 
+SQL> delete from fft_test;
+
+1720 rows deleted.
+
+SQL> delete from ft_test;
+
+0 rows deleted.
+
+SQL> commit;
+
+Commit complete.
+
+SQL> 
+SQL> exec fft_test_p (1, 9, 1);
+
+PL/SQL procedure successfully completed.
+
+SQL> exec ft_test_p  (1, 9, 1);
+
+PL/SQL procedure successfully completed.
+
+SQL> 
+SQL> exec fft_test_p (10, 20, 10);
+
+PL/SQL procedure successfully completed.
+
+SQL> exec ft_test_p  (10, 20, 10);
+
+PL/SQL procedure successfully completed.
+
+SQL> 
+SQL> select *
+  2    from fft_test, ft_test
+  3   where fft_test.N = ft_test.N
+  4     and fft_test.s = ft_test.s
+  5     and abs (fft_test.probability-ft_test.probability) > 1e6
+  6   order by fft_test.N, fft_test.s;
+
+no rows selected
+
+SQL> 
+SQL> spool off

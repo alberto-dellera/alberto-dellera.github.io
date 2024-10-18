@@ -1,0 +1,68 @@
+SQL> 
+SQL> set autotrace traceonly explain
+SQL> 
+SQL> rem     alter session set events '10053 trace name context forever';
+SQL> /*
+SQL> prompt  Join condition: t2.x = t1.x
+SQL> prompt  Filter on just T1
+SQL> 
+SQL> select  t1.v1, t2.v1
+SQL> from
+SQL>         t1,
+SQL>         t2
+SQL> where
+SQL>         t2.x = t1.x
+SQL> and     t1.filter = 1
+SQL> ;
+SQL> */
+SQL> 
+SQL> prompt  Join condition: t2.x = t1.x
+Join condition: t2.x = t1.x
+SQL> prompt  Filter on just T2
+Filter on just T2
+SQL> 
+SQL> select  t1.v1, t2.v1
+  2  from
+  3          t1,
+  4          t2
+  5  where
+  6          t2.x = t1.x
+  7  and     t2.filter = 1
+  8  ;
+
+Execution Plan
+----------------------------------------------------------
+   0      SELECT STATEMENT Optimizer=ALL_ROWS (Cost=9 Card=333 Bytes=10323)
+   1    0   HASH JOIN (Cost=9 Card=333 Bytes=10323)
+   2    1     TABLE ACCESS (FULL) OF 'T2' (Cost=4 Card=10 Bytes=170)
+   3    1     TABLE ACCESS (FULL) OF 'T1' (Cost=4 Card=1000 Bytes=14000)
+
+
+
+SQL> 
+SQL> alter session set events '10053 trace name context off';
+
+Session altered.
+
+SQL> 
+SQL> set autotrace off
+SQL> 
+SQL> select t.table_name, c.column_name, c.num_distinct, c.num_buckets,
+  2         swru ( c.num_distinct, decode (c.table_name, 'T1', t.num_rows, 'T2', 10), t.num_rows ) f_num_distinct
+  3   from user_tab_columns c, user_tables t
+  4   where t.table_name in ('T1','T2')
+  5     and t.table_name = c.table_name
+  6     and c.column_name in ('X')
+  7   order by table_name, column_name;
+
+TABLE_NAME           COLUMN_NAME          NUM_DISTINCT NUM_BUCKETS F_NUM_DISTINCT
+-------------------- -------------------- ------------ ----------- --------------
+T1                   X                              30           1             30
+T2                   X                              40           1     8.98285634
+
+2 rows selected.
+
+SQL> 
+SQL> doc
+SQL> 
+SQL> spool off

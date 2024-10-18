@@ -1,0 +1,20 @@
+<!--#include virtual="/ssi_pre_title.html" --> 
+<title>Alberto Dell'Era: Select Without Replacement</title>
+<!--#include virtual="/ssi_post_title.html" -->
+<br>
+<br>This <a href="SelectWithoutReplacement.pdf">paper</a> shows how the Oracle&trade; Cost Based Optimizer uses pervasively
+<br>a fundamental statistical formula for cardinality estimation of distinct, group-by and join operations.
+<br>
+<br>The formula gives the expected number of distinct values when selecting from a bag without replacement;
+<br>the paper illustrates the use of this formula when the selection is made from tables instead of bags
+<br>as a consequence of using filtering predicates in SQL statements.
+<br>
+<br>Both single-column and multiple-columns scenarios are illustrated.
+<br>
+<br>Particular emphasys is placed on the multi-column join operation, that implements additional statistical
+<br>concepts to estimate the cardinality. The traditional algorithm is investigated, and also the new algorithm 
+<br>introduced in 10g (and backported to the latest patchsets of 9i) commonly known as "10g multicolumn join selectivity sanity check".
+<br>
+<br>The supporting material is <a href="SelectWithoutReplacement_supporting_material.zip">here</a>.
+
+<!--#include virtual="/ssi_bottom.html" -->

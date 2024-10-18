@@ -1,0 +1,30 @@
+<!doctype html public "-//w3c//dtd html 4.0 transitional//en">
+<html>
+<head>
+   <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+   <meta name="GENERATOR" content="Mozilla/4.76 [en] (X11; U; Linux 2.4.0-4GB i686) [Netscape]">
+   <meta name="Author" content="Alberto Dell'Era">
+   <title>The good old anisotropic fractals</title>
+</head>
+<body text="#000000" bgcolor="#FFFFFF" link="#0000EE" vlink="#551A8B" alink="#FF0000">
+
+<h3>
+The (an)isotropic stocastic fractals</h3>
+These are the stocastic processes that&nbsp; I studied and developed in
+my Thesis.
+<br>Aren't they wonderful ? Sure they are! And so, when one wants to practice
+a bit of Java, there's nothing better than build an image generator that
+reveals them ...
+<br>How does it work ? Basically by constructing a realization of their
+spectrum and applying the inverse FFT (fast Fourier transform). I've simplified
+the algorithm since I didn't want to spend too much time translating from
+C++ to Java, but the result is nearly the same.
+<p>Here they are (the scrollbar on the right sets the Fractal Dimension:
+the more "ruvid" the image, the higher the fractal dimension).
+<p>Note: <b>this applet may not work in your browser. </b>JVM used by browsers
+are notoriously eccentric in their behaviour, and of course I can't pretend
+to have built an industrial-strength application...
+<br>&nbsp;
+<p><applet code="JFbm3DApplet.class" width=500 height=400></applet>
+</body>
+</html>

@@ -1,0 +1,823 @@
+SQL> 
+SQL> create table johet_lhs_values (
+  2    string_position int    not null,
+  3    value	       number not null,
+  4    constraint johet_lhs_values_pk primary key (string_position)
+  5  )
+  6  organization index;
+
+Table created.
+
+SQL> 
+SQL> create table johet_lhs_configuration (
+  2    cards_string  varchar2(100 char) not null,
+  3    constraint johet_lhs_configuration_pk primary key (cards_string)
+  4  )
+  5  organization index;
+
+Table created.
+
+SQL> 
+SQL> create table johet_rhs_values (
+  2    string_position int    not null,
+  3    value	       number not null,
+  4    constraint johet_rhs_values_pk primary key (string_position)
+  5  )
+  6  organization index;
+
+Table created.
+
+SQL> 
+SQL> create table johet_rhs_configuration (
+  2    cards_string  varchar2(100 char) not null,
+  3    constraint johet_rhs_configuration_pk primary key (cards_string)
+  4  )
+  5  organization index;
+
+Table created.
+
+SQL> 
+SQL> create table johet_results (
+  2    lhs_cards_string varchar2(100 char) not null,
+  3    rhs_cards_string varchar2(100 char) not null,
+  4    cbo_card_min  number,
+  5    cbo_card_max  number,
+  6    joh_card      number,
+  7    best_diff     number,
+  8    cbo_std_8i    number,
+  9    cbo_std_9i10g number,
+ 10    cbo_std_best_diff number,
+ 11    redo	     varchar2(100),
+ 12    constraint johet_results_pk primary key (lhs_cards_string, rhs_cards_string)
+ 13  );
+
+Table created.
+
+SQL> 
+SQL> drop table johet_lhs;
+
+Table dropped.
+
+SQL> drop table johet_rhs;
+
+Table dropped.
+
+SQL> create table johet_lhs (x number);
+
+Table created.
+
+SQL> create table johet_rhs (x number);
+
+Table created.
+
+SQL> exec join_over_histograms.install ('johet_lhs', 'x', 'johet_rhs', 'x');
+supporting objects installed for lhs: johet_lhs,x                                                                                                     
+supporting objects installed for rhs: johet_rhs,x                                                                                                     
+supporting objects installed for join                                                                                                                 
+
+PL/SQL procedure successfully completed.
+
+SQL> drop table johet_lhs_h;
+
+Table dropped.
+
+SQL> drop table johet_rhs_h;
+
+Table dropped.
+
+SQL> create table johet_lhs_h (x number, diff_ep int not null);
+
+Table created.
+
+SQL> create table johet_rhs_h (x number, diff_ep int not null);
+
+Table created.
+
+SQL> exec set_histo.install ('johet_lhs', 'johet_lhs_h');
+supporting objects installed for johet_lhs,johet_lhs_h.                                                                                               
+
+PL/SQL procedure successfully completed.
+
+SQL> exec set_histo.install ('johet_rhs', 'johet_rhs_h');
+supporting objects installed for johet_rhs,johet_rhs_h.                                                                                               
+
+PL/SQL procedure successfully completed.
+
+SQL> 
+SQL> create or replace package johet is
+  2  
+  3    -- generate the scenarios with parameter N and K and store
+  4    -- them in the johet_*_values, johet_*_configuration tables.
+  5    -- See the script header for the definition of N and K
+  6    procedure generate (n int, k int);
+  7  
+  8    -- run the scenarios.
+  9    -- See set_histo for the meaning of p_*_num_rows_per_bkt
+ 10    -- and p_*_density.
+ 11    procedure run (
+ 12  	 p_lhs_num_rows_per_bkt  number,
+ 13  	 p_lhs_density		 number,
+ 14  	 p_rhs_num_rows_per_bkt  number,
+ 15  	 p_rhs_density		 number
+ 16    );
+ 17  
+ 18    -- continue an interrupted run
+ 19    procedure restart (
+ 20  	 p_lhs_num_rows_per_bkt  number,
+ 21  	 p_lhs_density		 number,
+ 22  	 p_rhs_num_rows_per_bkt  number,
+ 23  	 p_rhs_density		 number
+ 24    );
+ 25  
+ 26    procedure perform_test_ext (
+ 27  	 p_lhs_cards_string	 varchar2,
+ 28  	 p_rhs_cards_string	 varchar2,
+ 29  	 p_lhs_num_rows_per_bkt  number,
+ 30  	 p_lhs_density		 number,
+ 31  	 p_rhs_num_rows_per_bkt  number,
+ 32  	 p_rhs_density		 number
+ 33    );
+ 34  
+ 35  end johet;
+ 36  /
+
+Package created.
+
+SQL> show errors;
+No errors.
+SQL> 
+SQL> create or replace package body johet is
+  2  
+  3  -----------------------------------------------------------
+  4  -- http://asktom.oracle.com/tkyte/hexdec/hexdec.sql
+  5  -- slightly modified
+  6  function to_base( p_dec in number, p_base in number, p_num_digits int)
+  7  return varchar2
+  8  is
+  9  	     l_str   varchar2(255) default NULL;
+ 10  	     l_num   number  default p_dec;
+ 11  	     l_hex   varchar2(16) default '0123456789ABCDEF';
+ 12  begin
+ 13  	     if ( p_dec is null or p_base is null )
+ 14  	     then
+ 15  		     return null;
+ 16  	     end if;
+ 17  	     if ( trunc(p_dec) <> p_dec OR p_dec < 0 ) then
+ 18  		     raise PROGRAM_ERROR;
+ 19  	     end if;
+ 20  	     loop
+ 21  		     l_str := substr( l_hex, mod(l_num,p_base)+1, 1 ) || l_str;
+ 22  		     l_num := trunc( l_num/p_base );
+ 23  		     exit when ( l_num = 0 );
+ 24  	     end loop;
+ 25  	     return lpad (l_str, p_num_digits, '0');
+ 26  end to_base;
+ 27  
+ 28  -----------------------------------------------------------
+ 29  -- http://asktom.oracle.com/tkyte/hexdec/hexdec.sql
+ 30  function to_dec
+ 31  ( p_str in varchar2,
+ 32    p_from_base in number default 16 ) return number
+ 33  is
+ 34  	     l_num   number default 0;
+ 35  	     l_hex   varchar2(16) default '0123456789ABCDEF';
+ 36  begin
+ 37  	     if ( p_str is null or p_from_base is null )
+ 38  	     then
+ 39  		     return null;
+ 40  	     end if;
+ 41  	     for i in 1 .. length(p_str) loop
+ 42  		     l_num := l_num * p_from_base + instr(l_hex,upper(substr(p_str,i,1)))-1;
+ 43  	     end loop;
+ 44  	     return l_num;
+ 45  end to_dec;
+ 46  
+ 47  -----------------------------------------------------------
+ 48  procedure generate_lhs (n int)
+ 49  is
+ 50    v     number;
+ 51    cards varchar2(100 char);
+ 52  begin
+ 53  	delete from johet_lhs_configuration;
+ 54  	delete from johet_lhs_values;
+ 55  
+ 56  	for i in 0..n loop
+ 57  	  v := 100 * i;
+ 58  	  insert into johet_lhs_values (string_position, value) values (i, v);
+ 59  	end loop;
+ 60  
+ 61  	for i in 0.. power (2, n)-1 loop
+ 62  	  cards := '0'|| translate (to_base (i, 2, n), '01','12') ;
+ 63  	  -- change popular card to 3 (temp 1/2)
+ 64  	  cards := replace (cards, '2', '3');
+ 65  	  dbms_output.put_line (cards);
+ 66  	  insert into johet_lhs_configuration (cards_string) values (cards);
+ 67  	end loop;
+ 68  
+ 69  end generate_lhs;
+ 70  
+ 71  -----------------------------------------------------------
+ 72  function rhs_filter (cards varchar2, n int, k int)
+ 73  return varchar2
+ 74  is
+ 75    s varchar2(100 char);
+ 76  begin
+ 77    -- cards = 022211112202 for n=2, k = 3
+ 78    for i in 0..n loop
+ 79  	 s := substr (cards, 1 + i*(k+1) + 1, k);
+ 80  	 s := rtrim (s, '0');
+ 81  	 if instr (s, '0') > 0 then
+ 82  	   return 'N';
+ 83  	 end if;
+ 84    end loop;
+ 85    return 'Y';
+ 86  end rhs_filter;
+ 87  
+ 88  -----------------------------------------------------------
+ 89  procedure generate_rhs (n int, k int)
+ 90  is
+ 91    v     number;
+ 92    cards varchar2(100 char);
+ 93    cards_num_digits int;
+ 94    l_filter_passed varchar2 (1 char);
+ 95    l_num_potential int := 0;
+ 96    l_num_inserted  int := 0;
+ 97  begin
+ 98    delete from johet_rhs_configuration;
+ 99    delete from johet_rhs_values;
+100  
+101    for i in 0..n loop
+102  	 for j in 0..k loop
+103  	   v := 100 * i + j;
+104  	   insert into johet_rhs_values (string_position, value) values (i*(k+1)+j, v);
+105  	 end loop;
+106    end loop;
+107  
+108    cards_num_digits := (n+1)*(k+1);
+109    dbms_output.put_line ('cards_num_digits='||cards_num_digits);
+110    for i in 1..power (3, cards_num_digits-1)-1 loop
+111  	 cards := '0'|| to_base (i, 3, cards_num_digits-1);
+112  	 l_filter_passed := rhs_filter (cards, n, k);
+113  	 --dbms_output.put_line (cards||' '||l_filter_passed);
+114  	 l_num_potential := l_num_potential + 1;
+115  	 if l_filter_passed = 'Y' then
+116  	   -- change popular card to 3 (temp 2/2)
+117  	   cards := replace (cards, '2', '3');
+118  	   insert into johet_rhs_configuration (cards_string) values (cards);
+119  	   l_num_inserted := l_num_inserted + 1;
+120  	 end if;
+121    end loop;
+122  
+123    dbms_output.put_line ('inserted='||l_num_inserted||' potential='||l_num_potential
+124  	 ||' ratio='||trunc(100*l_num_inserted/l_num_potential,2)||'%');
+125  end generate_rhs;
+126  
+127  -----------------------------------------------------------
+128  procedure generate (n int, k int)
+129  is
+130  begin
+131    generate_lhs (n);
+132    generate_rhs (n,k);
+133    commit;
+134  end generate;
+135  
+136  -----------------------------------------------------------
+137  procedure perform_test (
+138    p_lhs_cards_string      varchar2,
+139    p_rhs_cards_string      varchar2,
+140    p_lhs_num_rows_per_bkt  number,
+141    p_lhs_density	       number,
+142    p_rhs_num_rows_per_bkt  number,
+143    p_rhs_density	       number,
+144    p_cbo_card_min	       out number,
+145    p_cbo_card_max	       out number,
+146    p_joh_card	       out number,
+147    p_cbo_standard_8i       out number,
+148    p_cbo_standard_9i10g    out number,
+149    p_prev_lhs_cards_string in out varchar2, -- speed optim only
+150    p_prev_rhs_cards_string in out varchar2, -- speed optim only
+151    p_redo		       out varchar2
+152  )
+153  is
+154    l_diff_ep number;
+155    l_card	      number;
+156    l_card_swapped number;
+157  begin
+158    p_redo := replace ('exec johet.perform_test_ext (!'
+159  	 ||p_lhs_cards_string	 ||'!,!'||p_rhs_cards_string||'!,'
+160  	 ||p_lhs_num_rows_per_bkt||','||nvl(to_char(p_lhs_density),'null')||','
+161  	 ||p_rhs_num_rows_per_bkt||','||nvl(to_char(p_rhs_density),'null')||');', '!', '''');
+162  
+163    -- set lhs histogram
+164    if p_prev_lhs_cards_string is null or p_prev_lhs_cards_string != p_lhs_cards_string then
+165  	 delete from johet_lhs_h;
+166  	 for i in 1..length(p_lhs_cards_string) loop
+167  	   l_diff_ep := to_number (substr (p_lhs_cards_string, i, 1));
+168  	   if l_diff_ep > 0 then
+169  	     insert into johet_lhs_h (x, diff_ep)
+170  	     select value, l_diff_ep from johet_lhs_values where string_position = i-1;
+171  	   end if;
+172  	 end loop;
+173  
+174  	 set_histo.set ('johet_lhs', 'johet_lhs_h', p_lhs_num_rows_per_bkt, p_lhs_density, 'N');
+175  	 p_prev_lhs_cards_string := p_lhs_cards_string;
+176    end if;
+177  
+178    -- set rhs histogram
+179    if p_prev_rhs_cards_string is null or p_prev_rhs_cards_string != p_rhs_cards_string then
+180  	 delete from johet_rhs_h;
+181  	 for i in 1..length(p_rhs_cards_string) loop
+182  	   l_diff_ep := to_number (substr (p_rhs_cards_string, i, 1));
+183  	   if l_diff_ep > 0 then
+184  	     insert into johet_rhs_h (x, diff_ep)
+185  	     select value, l_diff_ep from johet_rhs_values where string_position = i-1;
+186  	   end if;
+187  	 end loop;
+188  
+189  	 set_histo.set ('johet_rhs', 'johet_rhs_h', p_rhs_num_rows_per_bkt, p_rhs_density, 'N');
+190  	 p_prev_rhs_cards_string := p_rhs_cards_string;
+191    end if;
+192  
+193    cbo_cardinality.get_both ('johet_lhs', 'x', 'johet_rhs', 'x', l_card, l_card_swapped);
+194  
+195    p_cbo_card_min  := least    (l_card, l_card_swapped);
+196    p_cbo_card_max  := greatest (l_card, l_card_swapped);
+197    p_joh_card      := join_over_histograms.get ('johet_lhs', 'x', 'johet_rhs', 'x', 'N');
+198  
+199    -- this lines have to be AFTER the call to join_over_histograms.get()!
+200    p_cbo_standard_8i    := join_over_histograms.g_last_cbo_standard_8i;
+201    p_cbo_standard_9i10g := join_over_histograms.g_last_cbo_standard_9i10g;
+202  
+203  --exception
+204  --  when others then
+205  --    raise_application_error (-20001, p_lhs_cards_string||' '||p_rhs_cards_string||' '||sqlerrm);
+206  end perform_test;
+207  
+208  -----------------------------------------------------------
+209  procedure perform_test_ext (
+210    p_lhs_cards_string      varchar2,
+211    p_rhs_cards_string      varchar2,
+212    p_lhs_num_rows_per_bkt  number,
+213    p_lhs_density	       number,
+214    p_rhs_num_rows_per_bkt  number,
+215    p_rhs_density	       number
+216  )
+217  is
+218    l_cbo_card_min	number;
+219    l_cbo_card_max	number;
+220    l_joh_card	number;
+221    l_cbo_standard_8i    number;
+222    l_cbo_standard_9i10g number;
+223    l_prev_lhs_cards_string johet_results.lhs_cards_string%type;
+224    l_prev_rhs_cards_string johet_results.rhs_cards_string%type;
+225    l_redo johet_results.redo%type;
+226  begin
+227    perform_test (
+228  	 p_lhs_cards_string	 ,
+229  	 p_rhs_cards_string	 ,
+230  	 p_lhs_num_rows_per_bkt  ,
+231  	 p_lhs_density		 ,
+232  	 p_rhs_num_rows_per_bkt  ,
+233  	 p_rhs_density		 ,
+234  	 l_cbo_card_min 	 ,
+235  	 l_cbo_card_max 	 ,
+236  	 l_joh_card		 ,
+237  	 l_cbo_standard_8i	 ,
+238  	 l_cbo_standard_9i10g	 ,
+239  	 l_prev_lhs_cards_string,
+240  	 l_prev_rhs_cards_string,
+241  	 l_redo
+242    );
+243  end perform_test_ext;
+244  
+245  -----------------------------------------------------------
+246  procedure restart (
+247    p_lhs_num_rows_per_bkt  number,
+248    p_lhs_density	       number,
+249    p_rhs_num_rows_per_bkt  number,
+250    p_rhs_density	       number
+251  )
+252  is
+253    l_cbo_card_min number;
+254    l_cbo_card_max number;
+255    l_joh_card     number;
+256    l_best_diff    number;
+257    l_start_time number;
+258    l_end_time   number;
+259    l_num_performed int := 0;
+260    l_cbo_standard_8i    number;
+261    l_cbo_standard_9i10g number;
+262    l_cbo_std_best_diff  number;
+263    l_redo johet_results.redo%type;
+264    l_prev_lhs_cards_string johet_results.lhs_cards_string%type;
+265    l_prev_rhs_cards_string johet_results.rhs_cards_string%type;
+266  begin
+267    l_start_time := dbms_utility.get_time;
+268    dbms_random.seed (0);
+269    for test in (select lhs_cards_string, rhs_cards_string
+270  		      from johet_results
+271  		     where cbo_card_min is null
+272  		     order by dbms_random.random, lhs_cards_string, rhs_cards_string)
+273    loop
+274  	 perform_test (test.lhs_cards_string, test.rhs_cards_string,
+275  		       p_lhs_num_rows_per_bkt, p_lhs_density, p_rhs_num_rows_per_bkt , p_rhs_density,
+276  		       l_cbo_card_min, l_cbo_card_max, l_joh_card, l_cbo_standard_8i, l_cbo_standard_9i10g,
+277  		       l_prev_lhs_cards_string, l_prev_rhs_cards_string, l_redo);
+278  
+279  	 if abs (l_cbo_card_min-l_joh_card) < abs (l_cbo_card_max-l_joh_card) then
+280  	   l_best_diff := l_cbo_card_min - l_joh_card;
+281  	 else
+282  	   l_best_diff := l_cbo_card_max - l_joh_card;
+283  	 end if;
+284  
+285  	 l_cbo_std_best_diff := least ( abs (l_cbo_standard_8i	  - l_cbo_card_min),
+286  					abs (l_cbo_standard_8i	  - l_cbo_card_max),
+287  					abs (l_cbo_standard_9i10g - l_cbo_card_min),
+288  					abs (l_cbo_standard_9i10g - l_cbo_card_max)
+289  				      );
+290  
+291  	 update johet_results
+292  	    set cbo_card_min	  = l_cbo_card_min,
+293  		cbo_card_max	  = l_cbo_card_max,
+294  		joh_card	  = l_joh_card,
+295  		best_diff	  = l_best_diff,
+296  		cbo_std_8i	  = l_cbo_standard_8i,
+297  		cbo_std_9i10g	  = l_cbo_standard_9i10g,
+298  		cbo_std_best_diff = l_cbo_std_best_diff,
+299  		redo		  = l_redo
+300  	  where lhs_cards_string = test.lhs_cards_string
+301  	    and rhs_cards_string = test.rhs_cards_string;
+302  	 commit;
+303  	 l_num_performed := l_num_performed + 1;
+304    end loop;
+305    l_end_time := dbms_utility.get_time;
+306  
+307    dbms_output.put_line ('tests/sec='||round (l_num_performed / ((l_end_time-l_start_time)/100.0), 2));
+308  end restart;
+309  
+310  -----------------------------------------------------------
+311  procedure run (
+312    p_lhs_num_rows_per_bkt  number,
+313    p_lhs_density	       number,
+314    p_rhs_num_rows_per_bkt  number,
+315    p_rhs_density	       number
+316  )
+317  is
+318  begin
+319    delete from johet_results;
+320    commit;
+321  
+322    insert /*+ append */ into johet_results (lhs_cards_string, rhs_cards_string)
+323    select lhs.cards_string, rhs.cards_string
+324  	 from johet_lhs_configuration lhs, johet_rhs_configuration rhs;
+325    dbms_output.put_line (sql%rowcount||' tests ready to run.');
+326    commit;
+327  
+328    restart (p_lhs_num_rows_per_bkt, p_lhs_density, p_rhs_num_rows_per_bkt , p_rhs_density);
+329  end run;
+330  
+331  end johet;
+332  /
+
+Package body created.
+
+SQL> show errors;
+No errors.
+SQL> 
+SQL> -- workaround for bug 4626732, 5752903 "ORA-07445 [ACCESS_VIOLATION] [_evaopn2+153]"
+SQL> alter session set "_optimizer_native_full_outer_join"=force;
+
+Session altered.
+
+SQL> 
+SQL> --exec johet.generate (1,0);
+SQL> exec johet.generate (2,1);
+011                                                                                                                                                   
+013                                                                                                                                                   
+031                                                                                                                                                   
+033                                                                                                                                                   
+cards_num_digits=6                                                                                                                                    
+inserted=242 potential=242 ratio=100%                                                                                                                 
+
+PL/SQL procedure successfully completed.
+
+SQL> --exec johet.generate (2,2);
+SQL> --exec johet.generate (2,3);
+SQL> 
+SQL> select * from johet_lhs_values;
+
+STRING_POSITION      VALUE                                                                                                                            
+--------------- ----------                                                                                                                            
+              0          0                                                                                                                            
+              1        100                                                                                                                            
+              2        200                                                                                                                            
+
+SQL> select * from johet_lhs_configuration;
+
+CARDS_STRING                                                                                                                                          
+------------------------------------------------------------------------------------------------------------------------------------------------------
+011                                                                                                                                                   
+013                                                                                                                                                   
+031                                                                                                                                                   
+033                                                                                                                                                   
+
+SQL> 
+SQL> select * from johet_rhs_values;
+
+STRING_POSITION      VALUE                                                                                                                            
+--------------- ----------                                                                                                                            
+              0          0                                                                                                                            
+              1          1                                                                                                                            
+              2        100                                                                                                                            
+              3        101                                                                                                                            
+              4        200                                                                                                                            
+              5        201                                                                                                                            
+
+6 rows selected.
+
+SQL> select * from johet_rhs_configuration;
+
+CARDS_STRING                                                                                                                                          
+------------------------------------------------------------------------------------------------------------------------------------------------------
+000001                                                                                                                                                
+000003                                                                                                                                                
+000010                                                                                                                                                
+000011                                                                                                                                                
+000013                                                                                                                                                
+000030                                                                                                                                                
+000031                                                                                                                                                
+000033                                                                                                                                                
+000100                                                                                                                                                
+000101                                                                                                                                                
+000103                                                                                                                                                
+000110                                                                                                                                                
+000111                                                                                                                                                
+000113                                                                                                                                                
+000130                                                                                                                                                
+000131                                                                                                                                                
+000133                                                                                                                                                
+000300                                                                                                                                                
+000301                                                                                                                                                
+000303                                                                                                                                                
+000310                                                                                                                                                
+000311                                                                                                                                                
+000313                                                                                                                                                
+000330                                                                                                                                                
+000331                                                                                                                                                
+000333                                                                                                                                                
+001000                                                                                                                                                
+001001                                                                                                                                                
+001003                                                                                                                                                
+001010                                                                                                                                                
+001011                                                                                                                                                
+001013                                                                                                                                                
+001030                                                                                                                                                
+001031                                                                                                                                                
+001033                                                                                                                                                
+001100                                                                                                                                                
+001101                                                                                                                                                
+001103                                                                                                                                                
+001110                                                                                                                                                
+001111                                                                                                                                                
+001113                                                                                                                                                
+001130                                                                                                                                                
+001131                                                                                                                                                
+001133                                                                                                                                                
+001300                                                                                                                                                
+001301                                                                                                                                                
+001303                                                                                                                                                
+001310                                                                                                                                                
+001311                                                                                                                                                
+001313                                                                                                                                                
+001330                                                                                                                                                
+001331                                                                                                                                                
+001333                                                                                                                                                
+003000                                                                                                                                                
+003001                                                                                                                                                
+003003                                                                                                                                                
+003010                                                                                                                                                
+003011                                                                                                                                                
+003013                                                                                                                                                
+003030                                                                                                                                                
+003031                                                                                                                                                
+003033                                                                                                                                                
+003100                                                                                                                                                
+003101                                                                                                                                                
+003103                                                                                                                                                
+003110                                                                                                                                                
+003111                                                                                                                                                
+003113                                                                                                                                                
+003130                                                                                                                                                
+003131                                                                                                                                                
+003133                                                                                                                                                
+003300                                                                                                                                                
+003301                                                                                                                                                
+003303                                                                                                                                                
+003310                                                                                                                                                
+003311                                                                                                                                                
+003313                                                                                                                                                
+003330                                                                                                                                                
+003331                                                                                                                                                
+003333                                                                                                                                                
+010000                                                                                                                                                
+010001                                                                                                                                                
+010003                                                                                                                                                
+010010                                                                                                                                                
+010011                                                                                                                                                
+010013                                                                                                                                                
+010030                                                                                                                                                
+010031                                                                                                                                                
+010033                                                                                                                                                
+010100                                                                                                                                                
+010101                                                                                                                                                
+010103                                                                                                                                                
+010110                                                                                                                                                
+010111                                                                                                                                                
+010113                                                                                                                                                
+010130                                                                                                                                                
+010131                                                                                                                                                
+010133                                                                                                                                                
+010300                                                                                                                                                
+010301                                                                                                                                                
+010303                                                                                                                                                
+010310                                                                                                                                                
+010311                                                                                                                                                
+010313                                                                                                                                                
+010330                                                                                                                                                
+010331                                                                                                                                                
+010333                                                                                                                                                
+011000                                                                                                                                                
+011001                                                                                                                                                
+011003                                                                                                                                                
+011010                                                                                                                                                
+011011                                                                                                                                                
+011013                                                                                                                                                
+011030                                                                                                                                                
+011031                                                                                                                                                
+011033                                                                                                                                                
+011100                                                                                                                                                
+011101                                                                                                                                                
+011103                                                                                                                                                
+011110                                                                                                                                                
+011111                                                                                                                                                
+011113                                                                                                                                                
+011130                                                                                                                                                
+011131                                                                                                                                                
+011133                                                                                                                                                
+011300                                                                                                                                                
+011301                                                                                                                                                
+011303                                                                                                                                                
+011310                                                                                                                                                
+011311                                                                                                                                                
+011313                                                                                                                                                
+011330                                                                                                                                                
+011331                                                                                                                                                
+011333                                                                                                                                                
+013000                                                                                                                                                
+013001                                                                                                                                                
+013003                                                                                                                                                
+013010                                                                                                                                                
+013011                                                                                                                                                
+013013                                                                                                                                                
+013030                                                                                                                                                
+013031                                                                                                                                                
+013033                                                                                                                                                
+013100                                                                                                                                                
+013101                                                                                                                                                
+013103                                                                                                                                                
+013110                                                                                                                                                
+013111                                                                                                                                                
+013113                                                                                                                                                
+013130                                                                                                                                                
+013131                                                                                                                                                
+013133                                                                                                                                                
+013300                                                                                                                                                
+013301                                                                                                                                                
+013303                                                                                                                                                
+013310                                                                                                                                                
+013311                                                                                                                                                
+013313                                                                                                                                                
+013330                                                                                                                                                
+013331                                                                                                                                                
+013333                                                                                                                                                
+030000                                                                                                                                                
+030001                                                                                                                                                
+030003                                                                                                                                                
+030010                                                                                                                                                
+030011                                                                                                                                                
+030013                                                                                                                                                
+030030                                                                                                                                                
+030031                                                                                                                                                
+030033                                                                                                                                                
+030100                                                                                                                                                
+030101                                                                                                                                                
+030103                                                                                                                                                
+030110                                                                                                                                                
+030111                                                                                                                                                
+030113                                                                                                                                                
+030130                                                                                                                                                
+030131                                                                                                                                                
+030133                                                                                                                                                
+030300                                                                                                                                                
+030301                                                                                                                                                
+030303                                                                                                                                                
+030310                                                                                                                                                
+030311                                                                                                                                                
+030313                                                                                                                                                
+030330                                                                                                                                                
+030331                                                                                                                                                
+030333                                                                                                                                                
+031000                                                                                                                                                
+031001                                                                                                                                                
+031003                                                                                                                                                
+031010                                                                                                                                                
+031011                                                                                                                                                
+031013                                                                                                                                                
+031030                                                                                                                                                
+031031                                                                                                                                                
+031033                                                                                                                                                
+031100                                                                                                                                                
+031101                                                                                                                                                
+031103                                                                                                                                                
+031110                                                                                                                                                
+031111                                                                                                                                                
+031113                                                                                                                                                
+031130                                                                                                                                                
+031131                                                                                                                                                
+031133                                                                                                                                                
+031300                                                                                                                                                
+031301                                                                                                                                                
+031303                                                                                                                                                
+031310                                                                                                                                                
+031311                                                                                                                                                
+031313                                                                                                                                                
+031330                                                                                                                                                
+031331                                                                                                                                                
+031333                                                                                                                                                
+033000                                                                                                                                                
+033001                                                                                                                                                
+033003                                                                                                                                                
+033010                                                                                                                                                
+033011                                                                                                                                                
+033013                                                                                                                                                
+033030                                                                                                                                                
+033031                                                                                                                                                
+033033                                                                                                                                                
+033100                                                                                                                                                
+033101                                                                                                                                                
+033103                                                                                                                                                
+033110                                                                                                                                                
+033111                                                                                                                                                
+033113                                                                                                                                                
+033130                                                                                                                                                
+033131                                                                                                                                                
+033133                                                                                                                                                
+033300                                                                                                                                                
+033301                                                                                                                                                
+033303                                                                                                                                                
+033310                                                                                                                                                
+033311                                                                                                                                                
+033313                                                                                                                                                
+033330                                                                                                                                                
+033331                                                                                                                                                
+033333                                                                                                                                                
+
+242 rows selected.
+
+SQL> 
+SQL> set serveroutput off
+SQL> exec johet.run (0, null, 10, null);
+
+PL/SQL procedure successfully completed.
+
+SQL> set serveroutput on size 1000000
+SQL> 
+SQL> col lhs_cards_string form a10
+SQL> col rhs_cards_string form a10
+SQL> col redo form a64
+SQL> col actual_value form a20
+SQL> col  low_value   form a20
+SQL> col high_value   form a20
+SQL> col percent      form 99.9
+SQL> --select * from johet_results order by 1,2;
+SQL> 
+SQL> select * from johet_results where abs(best_diff) > 1.5 order by abs(best_diff);
+
+no rows selected
+
+SQL> 
+SQL> -- absolute error
+SQL> select 0.5* round (abs(best_diff)/0.5) as diff, count(*), round(100*ratio_to_report (count(*)) over(),1) as percent
+  2   from johet_results group by 0.5* round (abs(best_diff)/0.5) order by 1;
+
+      DIFF   COUNT(*) PERCENT                                                                                                                         
+---------- ---------- -------                                                                                                                         
+         0        424    43.8                                                                                                                         
+        .5        459    47.4                                                                                                                         
+         1         85     8.8                                                                                                                         
+
+SQL> 
+SQL> --select * from johet_results where abs(best_diff) > 1.5
+SQL> --  and abs (cbo_std_best_diff) <= 1 order by abs(best_diff);
+SQL> 
+SQL> spool off

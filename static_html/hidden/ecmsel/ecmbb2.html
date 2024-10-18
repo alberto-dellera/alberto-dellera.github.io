@@ -1,0 +1,577 @@
+<!DOCTYPE html PUBLIC "-//w3c//dtd html 4.0 transitional//en">
+<html><head>
+
+
+   <meta http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+   <meta name="GENERATOR" content="Mozilla/4.76 [en] (X11; U; Linux 2.4.0-4GB i686) [Netscape]">
+   <meta name="Author" content="Alberto Dell'Era"><title>Alberto Dell'Era 's solution for BB2</title></head><body alink="#ff0000" bgcolor="#ffffff" link="#0000ee" text="#000000" vlink="#551a8b">
+
+<h1>
+The Problem</h1>
+From the&nbsp; <a href="http://www.ecmsel.co.uk/">ECM Selection</a>&nbsp;
+web site - by kind permission.
+<p>Given the following statements:
+</p><p>1000 &lt; x &lt; 9000
+</p><p>Arranging the 4 digits of x in descending order produces y
+<br>Arranging the 4 digits of x in descending order produces z
+</p><p>Find the solution of
+</p><p>x = y - z&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; <font color="#000000">[main
+cond]</font>
+<br>&nbsp;
+</p><h1>
+My solution</h1>
+
+<h2>
+Some notation</h2>
+Given a number n, n[i] is the i-th digit counting from the least significant
+digit and starting with 0.
+<p>E.g., if n = 5678, n[3] = 5, n[2] = 6, n[1] = 7, n[0] = 8.
+</p><p>Of course, 0 &lt;= n[i] &lt;= 9.
+</p><p>It holds that (let's call it "base-10 factorization")
+</p><p>n = 1000&nbsp; n[3] + 100 n[2] + 10&nbsp; n[1] + n[0]
+<br>&nbsp;
+</p><h2>
+Rewriting [main cond]</h2>
+Let's rewrite [main cond] as a function of y.
+<p>Since y[i] = z[3-i], we have
+</p><p>y - z = 1000&nbsp; y[3] + 100&nbsp; y[2] + 10 y [1] + y[0] - 1000 y
+[0] - 100 y [1] - 10 y [2] -&nbsp; y[3] =
+<br>999 (y[3] - y[0]) + 100 (y[2] - y [1])
+</p><p>Let
+<br>i&nbsp; = y[3] - y[0],
+<br>k = y[2] - y[1]
+</p><p>So, [main cond] can be rewritten as
+</p><p>x = 999 i + 90 k&nbsp;&nbsp; [main cond 2]
+</p><p>Since y [3] &gt;= y [2] &gt;= y [1] &gt;= y[0], we have that
+</p><p>0 &lt;= i &lt;= 9
+<br>0 &lt;= k &lt;= i &lt;= 9
+</p><h2>
+Further pruning the solution space</h2>
+We'll show that must be
+<p>1 &lt;= i &lt;= 8
+<br>1 &lt;= k &lt;= i &lt;= 8
+</p><h3>
+i = 0 can't produce a solution</h3>
+Since k &lt;= i, i = 0&nbsp; --&gt; k = 0 -&gt; x = 0 which is not in (1000,9000)
+<h3>
+k = 0 can't produce a solution</h3>
+<i>Note: it may seem overkilling to perform such a "complex" analysis just
+to exclude a single value of k,</i>
+<br><i>but, as we'll show later, this is crucial for the algorithm, producing
+a gain that is vastly superior to</i>
+<br><i>the mere exclusion of nearly 9 iterations.</i>
+<p>k = 0 means x = 999 i.
+<br>The constraint x &gt; 1000 forces i &gt;= 2.
+<br>Now let's iterate from i = 2 to i = 9 (a total of 8 iterations).
+<br>For i = 2, x = 1998; for every increment of i, we sum 999, or equivalently
+<br>we add 1000 and subtract 1.
+<br>Since we perform only 8 iterations, and we start with x[0] = 8, the
+subtraction of 1 never
+<br>needs any borrow from the rest of x, so it modifies only x[0].
+<br>Equivalently, since we start with x[3] = 1, the addition of 1000 modifies
+only x[3].
+<br>Thus
+<br>x[3] = i - 1; x[2] = 9; x[1] = 9; x[0] = 10 - i.
+<br>Ordering the digits of x, we discover that y[3] = y [2] = 9. But ,
+in order to have k = y[2] - y[1] = 0,
+<br>y[1] should be 9, too. So, it should hold either x[3] = 9 or x[0] =
+9.
+<br>x[3] = 9 means i - 1 = 9 &lt;--&gt; i = 10, out of constraints on i.
+<br>x[0] = 9 means 10 - i = 9 &lt;--&gt;&nbsp; i = 1 not possible since i
+must be &gt;= 2.
+</p><p>So the assertion is proved.
+</p><h3>
+i = 9 can't produce a solution</h3>
+We have x = 999*9 + 90k; since x &lt; 9000, we should have k &lt; (9000-999*9)
+/ 90 = 9 / 10 = 0.9 &lt;--&gt; k = 0,
+<br>already excluded.
+<h3>
+k = 9 can't produce a solution</h3>
+Trivial, since k &lt;= i&nbsp; and we already saw that must be i &lt;=
+8.
+<br>&nbsp;
+<h2>
+Avoiding checking for 1000 &lt; x &lt; 9000</h2>
+We'll show that
+<p>1 &lt;= i &lt;= 8
+<br>1 &lt;= k &lt;= i &lt;= 8
+</p><p>implies that
+</p><p>1000 &lt; x=(999i+90k) &lt; 9000
+</p><p>which means that we can avoid checking for the interval.
+<br>&nbsp;
+</p><h3>
+x &gt; 1000</h3>
+since min (i) = 1 and min(k) = 1, it's 999i+90k &gt; 999*1 + 90 * 1 = 1089&gt;
+1000
+<h3>
+x &lt; 9000</h3>
+since max(i) = 8 and max(k) = 8, it's 999i+90k &lt; 999*8+90*8 = 8712 &lt;
+9000
+<br>&nbsp;
+<h2>
+Solution main strategy</h2>
+So far we know that if we iterate on all the&nbsp; possible values of y,
+y - z is contained in
+<br>the set defined by [main cond 2]; this set, given the constraints of
+i and k,&nbsp; is composed
+<br>of only 8(8+1)/&nbsp; 2 = 36 values. Values of x not belonging to this
+set can't satisfy the main condition,
+<br>so we can safely discard them -and that means considering only 36 values
+out of 9000-1000 = 8000.
+<br>This is of course the most important result of the mathematical analysis
+we are performing here.
+<p>So, my strategy is to iterate on this set (let's call the iterator c_x,
+short of "candidate x";
+<br>c_x = 999c_i+90c_k), ordering the digits of c_x in descending order
+to obtain c_y, calculating
+<br>c_i and c_k and then testing for [main cond 2], that is, checking that
+c_x == 999c_i + 90c_k.
+</p><p>That is, in pseudo-code
+<br>loop on c_i for 1 &lt;= c_i &lt;= 8
+<br>&nbsp;&nbsp;&nbsp; loop on c_k for 1 &lt;= c_k &lt;= c_i
+<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; c_x = 999 c_i + 90 c_k
+<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; factorize c_x (calculate
+its digits c_x[3], c_x[2], c_x[1], c_x[0])
+<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; sort c_x[3], c_x[2], c_x[1],
+c_x[0]&nbsp; in descending order (this yields c_y[3], c_y[2], c_y[1], c_y[0])
+<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; if (c_y[3] - c_y[0] == c_i
+and c_y[2] - c_y[1] == c_k) then
+<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+c_x is the solution.
+<br>&nbsp;&nbsp;&nbsp; end of c_k loop
+<br>end of c_i loop
+<br>&nbsp;
+</p><p>The most expensive operations are the factorization and the sorting.
+<br>Let's move on and kill both of this cpu-eaters.
+</p><h2>
+Writing the factorization of x as a function of i and k</h2>
+We'll show that, given
+<p>1 &lt;= i &lt;= 8
+<br>1 &lt;= k &lt;= i &lt;= 8
+</p><p>it's always
+</p><p>x[3] = i
+<br>x[2] = k-1
+<br>x[1] = 9-k
+<br>x[0] = 10-i
+<br>&nbsp;
+</p><h3>
+Read this first</h3>
+1) All symbols in this section are integers &gt;= 0 (0,1,2,3,4,...).
+<br>the symbol "/" is&nbsp; <i>integer </i>division (e.g. 7 / 3=2)
+<br>and "%" denotes the modulus (e.g. 7 % 3= 1).
+<p>2) We use this properties of the modulus (remainder).
+<br>Of course they have better names in the literature, but here I will
+name it
+<br>as green and red property, to show where I use them by accordingly
+colouring
+<br>the relevant components.
+</p><p>a % n = (a + m<font color="#000000"> </font><font color="#006600">n</font>)
+% <font color="#000000">n&nbsp;</font>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+(for m &gt;= 0, a &gt;= 0, n &gt; 0)&nbsp;&nbsp;&nbsp; [<font color="#006600">green
+</font>property]
+<br>(<font color="#cc0000">m </font>a) % ( <font color="#ff0000">m</font>
+n) = <font color="#ff0000">m </font>(a % n)&nbsp;&nbsp;&nbsp; (for m &gt;&nbsp;&nbsp;
+0, a &gt;= 0, n &gt; 0)&nbsp;&nbsp;&nbsp; [<font color="#ff0000">red </font>property]
+<br>&nbsp;
+</p><h3>
+x[0] = 10 - i</h3>
+It's x[0] = x % 10. So,
+<p>x % 10 = (999i + 90k) % 10= (999i + 90 + <font color="#006600">10 </font><font color="#000000">*
+9 * (k-1)</font>) % <font color="#006600">10 </font>= (999i + 90)% 10
+</p><p><i>Please note here that in order to apply the green property in the
+last equality, I've used</i>
+<br><i>the result obtained in the "k = 0 can't produce a solution" paragraph,
+which implies</i>
+<br><i>k &gt;= 1&nbsp; and so m=9(k-1) &gt;= 0. Without that result, it would
+be impossible to write the</i>
+<br><i>factorization as a function of i and k (at least in term of simple
+subtractions).</i>
+</p><p>But (999i + 90) % 10 = (<font color="#006600">10</font> * 100 i - i
++ 90) % 10 = ( 90 - i) % 10 =
+<br>= (<font color="#009900">10</font> * 8 + 10 - i) % 10 = (10 - i) %
+10 = 10 - i
+<br>&nbsp;
+</p><h3>
+x[1] = 9 - k</h3>
+It's x[1] = ((x - x[0]) % 100 ) /&nbsp; 10. So,
+<p>(x - x[0]) % 100 = (999i + 90k - (10-i)) % 100 = (1000 i + 90k -10 )
+% 100 =
+<br>= (<font color="#006600">100</font> * 10 i + 90k - 10) % 100 = (90k
+- 10) % 100 = (<font color="#ff0000">10</font> (9k - 1)) % (<font color="#ff0000">10
+</font>*
+10) =
+<br>= 10 ((9k-1)%10)
+</p><p>So x[1] = (9k-1) % 10 = (<font color="#006600">10</font> + 9k - 1) %
+10 = (9 + <font color="#006600">10</font>k - k) % 10 = (9-k) % 10 = 9-k
+<br>&nbsp;
+</p><h3>
+x[2] = k - 1</h3>
+It's x[2] = ((x - 10 x[1] - x[0]) % 1000) / 100. So,
+<p>(x - 10 * x[1] - x[0]) % 1000 = (999i + 90k - 10(9-k) -(10-i)) % 1000
+=
+<br>= (<font color="#006600">1000</font> i + 100 k - 100) % 1000 = (100
+k - 100) % 1000 = (<font color="#ff0000">100</font> (k-1)) % (<font color="#ff0000">100
+</font><font color="#000000">*
+10)</font> =
+<br>= 100 ((k-1)%10) = 100 (k-1)
+</p><p>x[2] = 100 (k-1) / 100 = k - 1
+<br>&nbsp;
+</p><h3>
+x[3] = i</h3>
+It's x[3] = ((x - 100 x[2] - 10 x[1]&nbsp; - x[0]) % 10000) / 1000. So,
+<p>(x - 100 x[2] - 10 x[1]&nbsp; - x[0]) % 10000 = (999i + 90k - 100k +
+100 - 90 + 10k - 10 + i) =
+<br>= (1000 i) % 10000 = (<font color="#ff0000">1000</font> i ) % (<font color="#ff0000">1000
+</font>*
+10) = 1000 (i % 10) = 1000 i
+</p><p>x[3] = (1000i) / 1000 = i
+<br>&nbsp;
+</p><h3>
+Optimizing the sorting</h3>
+A common and quick way of ordering a vector is to visit it considering
+<br>all the possible pairs, and swapping them when they are not in order.
+<br>That is good since the swapping requires 3 assignment (through a temp
+variable)
+<br>and is done, considering a random distribution of data, 50% of the
+time (actually
+<br>slightly less since you don't swap when the values are equal) thus
+yielding an average
+<br>of 1.5 assignments per pair.
+<p>But our vector x[3] .. x[0] is not randomly distributed .. the opposite
+is true,
+<br>we can order it considering just two pairs (an average of 2*1.5 = 3
+assignments)!!
+</p><p>Consider
+</p><p>1 &lt;= i &lt;= 8
+<br>1 &lt;= k &lt;= i &lt;= 8
+</p><p>x[3] = i
+<br>x[2] = k-1
+<br>x[1] = 9-k
+<br>x[0] = 10-i
+</p><p>Note that two of the digits (x[3] and x[0]) depend only on i,
+<br>while the other two (x[2] and x[1]) depend&nbsp; only on k.&nbsp; Moreover:
+</p><p>x[3] &gt; x[0]&nbsp; &lt;==&gt; i &gt; 10-i&nbsp;&nbsp;&nbsp;&nbsp; &lt;==&gt; i
+&gt; 5
+<br>x[2] &gt; x[1]&nbsp; &lt;==&gt; k-1 &gt;&nbsp; 9-k&nbsp; &lt;==&gt; k &gt; 5
+</p><p>This strongly suggest to divide the loop for i and k in two halves,
+<br>before and after the value 5. That way we can start with two pair
+<br>already ordered. Then we order the greatest of the two pairs to
+<br>obtain c_y[3], and the lowest to obtain c_y[0]. Then we are done,
+<br>since in order to test for the main condition we need just the difference
+<br>of c_y[2] and c_y[1], and so we are not interested in their ordering.
+</p><p>With a few more trick-of-the-trade (of the numerical programmer),
+<br>commented in the actual C code, we get the (winning, I hope ...) FindX
+routine.
+<br>&nbsp;
+</p><h1>
+A note on the solution(s) submitted</h1>
+As I was not sure wether or not it was legal to return as soon as a solution
+<br>is found without exploring the whole solution space, I've submitted
+two
+<br>version of the FindX() routine. They are identical, but one issues
+a return()
+<br>as soon as the iterations hit a solution, and the other saves the solution
+in a
+<br>variable and returns it when there are no more iterations to be performed.
+<br>If it existed more than one solution, the latter would return the last
+solution
+<br>found.
+<br>&nbsp;
+<h1>
+Proving the red and green properties</h1>
+For completeness, here is the formal demonstration of these two properties.
+<p>Of course, by definition of integer division and modulus, it's always
+</p><p>x = n (x / n) + x % n ,&nbsp;&nbsp; (for x &gt;= 0, n &gt; 0)
+<br>&nbsp;
+</p><h2>
+The green property</h2>
+We must prove that
+<p>x % n = (x + m<font color="#000000"> </font><font color="#006600">n</font>)
+% <font color="#000000">n&nbsp;</font>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+(for m &gt;= 0, x &gt;= 0, n &gt; 0)&nbsp;&nbsp;&nbsp; [<font color="#006600">green
+</font>property]
+</p><p>By definition,
+</p><p>x + mn = n ( (x + mn) / n) ) + ( x + mn) % n
+</p><p>but it's trivial that (x + mn) / n = m + x / n, so
+</p><p>x + mn = n m + n (x / n) + (x + mn) % n, or
+<br>x = n (x / n) + (x + mn) % n, or
+<br>x - n (x / n ) = (x + mn) % n
+</p><p>The lhs being equal to x % n, the assertion is proven.
+<br>&nbsp;
+</p><h2>
+The red property</h2>
+We must prove that
+<p>(<font color="#cc0000">m </font><font color="#000000">x)</font> % (
+<font color="#ff0000">m</font>
+n) = <font color="#ff0000">m </font>(x % n)&nbsp;&nbsp;&nbsp; (for m &gt;&nbsp;&nbsp;
+0, x &gt;= 0, n &gt; 0)&nbsp;&nbsp;&nbsp; [<font color="#ff0000">red </font>property]
+</p><p>By definition,
+</p><p>mx = (mn) ( (mx) / (mn) ) + (mx) % (mn)
+</p><p>A trivial property of the division (which I learnt when I was 6 year
+old) gives
+<br>(mx) / (mn) = x / n, so
+</p><p>mx = (mn) ( x / n ) + (mx) % (mn)&nbsp; or
+<br>mx = m (n (x / n) ) + (mx) % (mn)
+</p><p>But since, from the definition, n (x / n) = x - x % n, we have
+</p><p>mx = m ( x - x % n) + (mx ) % (mn), or
+<br>mx = mx - m (x % n) + (mx) % (mn)
+</p><p>that is,
+</p><p>(mx ) % mn = m (x % n)
+<br>&nbsp;
+</p><h1>
+The C code</h1>
+
+<pre>int FindX (void) {
+/* Compiled with "gcc -ansi -O3" option
+&nbsp;* tested on GNU gcc on Linux 2.2.13 (Pentium II 233MHz) ;&nbsp;
+&nbsp;* compiler version (output of gcc -v):&nbsp;
+&nbsp;* gcc version egcs-2.91.66 19990314/Linux (egcs-1.1.2 release)
+&nbsp;*/
+/* Full explanation of the algorithm is available here:
+&nbsp;* www.bigfoot.com/~alberto.dellera/ecmbb2.html
+&nbsp;* or through the author: alberto.dellera@bigfoot.com
+&nbsp;* For the sake of brevity, in this code the prefix c_ for
+&nbsp;* variables has been omitted.
+&nbsp;* Author: Alberto Dell'Era&nbsp;
+&nbsp;*/
+
+#define BB2_RETURN_ON_HIT&nbsp;&nbsp;
+
+register int i,k;
+int y3,y2,y1,y0,y3_out,y2_out;
+int temp;
+#ifndef BB2_RETURN_ON_HIT
+int last_sol_found = 0;
+#endif
+
+#ifndef BB2_DEBUG_ALGO
+&nbsp;&nbsp;&nbsp; #define ORDER(a,b) \
+&nbsp;&nbsp;&nbsp; if ((a)&lt;(b)) {&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; temp = (a);&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (a) = (b);&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (b) = temp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp; }
+#else&nbsp;
+&nbsp;&nbsp;&nbsp; #define ORDER(a,b)&nbsp; \
+&nbsp;&nbsp;&nbsp; ++numorderingatt;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp; if ((a)&lt;(b)) {&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; temp = (a);&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (a) = (b);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (b) = temp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ++numordering;&nbsp; \
+&nbsp;&nbsp;&nbsp; }
+#endif
+
+#ifndef BB2_ORDER_LAST_PAIR
+&nbsp;&nbsp;&nbsp; #define BB2_ORDER_LAST_PAIR_(a,b)&nbsp;
+#else
+&nbsp;&nbsp;&nbsp; #define BB2_ORDER_LAST_PAIR_(a,b) ORDER(a,b)
+
+#endif
+
+#ifndef BB2_DEBUG_ALGO
+&nbsp;&nbsp;&nbsp; #define ALGO_CORE_DEBUG&nbsp;
+#else
+&nbsp;&nbsp;&nbsp; #define ALGO_CORE_DEBUG&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; solution = ((y3)-(y0)) == (i) &amp;&amp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (((y2)-(y1)) == (k) || ((y1)-(y2)) == (k));&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; x = 999*(i)+90*(k);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; BB2_ORDER_LAST_PAIR_(y2,y1)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; printf ("%02d) i=%d k=%d&nbsp; %4d [%d%d%d%d] %3s %3s %s\n", \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ++iter,i,k,x, y3,y2,y1,y0,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ((y3)-(y0)==i ?"*i*":"&nbsp;&nbsp; "),&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (abs((y2)-(y1))==k?"*k*":"&nbsp;&nbsp; "),&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; (solution? "$$$hit$$$" : ""));&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+#endif
+
+#ifndef BB2_RETURN_ON_HIT&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp; #define THE_SOLUTION(a) last_sol_found = (a);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+#else
+&nbsp;&nbsp;&nbsp; #define THE_SOLUTION(a) return (a);
+#endif
+
+#define ALGO_CORE&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+{&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; /* here y3 &gt;= y2 and y1 &gt;= y0*/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ORDER (y3, y1);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ORDER (y2, y0);&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; /* here y3 = max (y3 ... y1)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; */&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; /* here y0 = min (y3 ... y1)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; */&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; /* we don't order y2,y1 since we need&nbsp;&nbsp;&nbsp; */&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; /* their difference only&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; */&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ALGO_CORE_DEBUG&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; /* check for [main cond 2] */&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; /* less expensive, first */&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; if (((y3)-(y0)) != (i))&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; continue;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; /* more expensive, second */&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; if (((y2)-(y1)) != (k) &amp;&amp; ((y1)-(y2)) != (k)) \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; continue;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; /* here the solution is found ! */&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; THE_SOLUTION (999*(i)+90*(k));&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; \
+}
+
+/* first half of i-loop for i &lt;= 5 */
+for (i = 1; i &lt;= 5; ++i) {
+&nbsp;&nbsp;&nbsp; #ifdef BB2_DEBUG_ALGO&nbsp;
+&nbsp;&nbsp;&nbsp; printf ("----\n");
+&nbsp;&nbsp;&nbsp; #endif
+
+&nbsp;&nbsp;&nbsp; /* since y3 and y2 depend only on i,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; */
+&nbsp;&nbsp;&nbsp; /* pre-order them in order to avoid sorting into */
+&nbsp;&nbsp;&nbsp; /* the k-loop.&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; */
+&nbsp;&nbsp;&nbsp; y3_out = 10-i;
+&nbsp;&nbsp;&nbsp; #define y2_out i
+
+&nbsp;&nbsp;&nbsp; /* first half of k-loop for k &lt;= 5 */
+&nbsp;&nbsp;&nbsp; for (k = 1; /*k &lt;= 5 &amp;&amp;*/ k &lt;= i; ++k) {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; y3 = y3_out;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; y2 = y2_out;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; y1 = 9 - k;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; y0 = k - 1;
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ALGO_CORE
+&nbsp;&nbsp;&nbsp; }
+
+&nbsp;&nbsp;&nbsp; /* second half of k-loop for k &gt; 5 */
+&nbsp;&nbsp;&nbsp; /* never executed since k &gt; i here - left for doc only
+&nbsp;&nbsp;&nbsp; for (; k &lt;= i; ++k) {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; y3 = y3_out;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; y2 = y2_out;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; y1 = k - 1;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; y0 = 9 - k;
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ALGO_CORE
+&nbsp;&nbsp;&nbsp; }
+&nbsp;&nbsp;&nbsp; */
+&nbsp;&nbsp;&nbsp; #undef y2_out
+}
+
+/* second half of i-loop for i &gt; 5&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; */
+/* please look at first half for comments */
+for (; i &lt;= 8; ++i) {
+&nbsp;&nbsp;&nbsp; #ifdef BB2_DEBUG_ALGO&nbsp;
+&nbsp;&nbsp;&nbsp; printf ("----\n");
+&nbsp;&nbsp;&nbsp; #endif
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+&nbsp;&nbsp;&nbsp; #define y3_out i&nbsp;
+&nbsp;&nbsp;&nbsp; y2_out = 10-i;
+
+&nbsp;&nbsp;&nbsp; /* first half of k-loop for k &lt;= 5 */
+&nbsp;&nbsp;&nbsp; for (k = 1; k &lt;= 5 /*&amp;&amp; k &lt;= i*/; ++k) {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; y3 = y3_out;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; y2 = y2_out;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; y1 = 9 - k;&nbsp;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; y0 = k - 1;
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ALGO_CORE
+&nbsp;&nbsp;&nbsp; }
+&nbsp;&nbsp;&nbsp; /* second half of k-loop for k &gt; 5 */
+&nbsp;&nbsp;&nbsp; for (; k &lt;= i; ++k) {
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; y3 = y3_out;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; y2 = y2_out;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; y1 = k - 1;
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; y0 = 9 - k;
+
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; ALGO_CORE
+&nbsp;&nbsp;&nbsp; }
+&nbsp;&nbsp;&nbsp; #undef y3_out
+}
+
+#ifndef BB2_RETURN_ON_HIT
+&nbsp;&nbsp;&nbsp; return last_sol_found;
+#else
+&nbsp;&nbsp;&nbsp; return 0;
+#endif
+
+}</pre>
+-------------
+<p>Alberto Dell'Era
+</p><p>&nbsp;<a href="mailto://alberto.dellera@bigfoot.com">alberto.dellera@bigfoot.com</a>
+<br>&nbsp;<a href="http://www.bigfoot.com/%7Ealberto.dellera">www.bigfoot.com/~alberto.dellera</a>
+</p><p>-------------
+</p><p>Document finalized on&nbsp; 9 Dec 2000.
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<br>&nbsp;
+<!-- saved from url=(0022)http://internet.e-mail -->
+<!-- START Digilander F -->
+<script language="Javascript">
+<!--
+rs_DLR=1;
+//-->
+</script>
+<script language="Javascript" src="ecmbb2_files/digi_ad_11.js">
+</script>
+<!-- END Digilander F -->
+<!-- START RedMeasure V4 - CGI v1.1 $Revision: 1.2 $ -->
+<!-- COPYRIGHT 2000 Red Sheriff Limited --> 
+
+<script language="JavaScript"><!--
+var pCid="it_Libero-it_0";
+var w0=1;
+var refR=escape(document.referrer);
+if (refR.length>=252) refR=refR.substring(0,252)+"...";
+//--></script>
+<script language="JavaScript1.1"><!--
+var w0=0;
+if (rs_DLR) document.write("<script language='JavaScript1.1' src='http://server-it.imrworldwide.com/c1.js'></script>");
+
+//--></script><script language="JavaScript1.1" src="ecmbb2_files/c1.js"></script><img src="ecmbb2_files/count.gif" height="1" width="1">
+
+<script language="JavaScript"><!--
+if(w0&&rs_DLR){
+	document.write('<img src="http://server-it.imrworldwide.com/cgi-bin/count?ref='+
+		refR+'&cid='+pCid+'" width=1 height=1>');
+}
+document.write("<COMMENT>");
+//-->
+</script><comment>
+<noscript>
+<img src="http://server-it.imrworldwide.com/cgi-bin/count?cid=it_Libero-it_0" width=1 height=1>
+</noscript>
+</comment>
+
+<!-- END RedMeasure V4 -->
+</p></body></html>

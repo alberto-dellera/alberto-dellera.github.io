@@ -1,0 +1,711 @@
+SQL> 
+SQL> -- end of initialization section
+SQL> 
+SQL> set echo on
+SQL> 
+SQL> drop table results;
+
+Table dropped.
+
+SQL> create table results (
+  2    num_rows_t1          int    not null,
+  3    num_rows_t2          int    not null,
+  4    num_distinct_t1_x    int    not null,
+  5    num_distinct_t2_x    int    not null,
+  6    num_distinct_t1_y    int    not null,
+  7    num_distinct_t2_y    int    not null,
+  8    f_num_rows_t1 number not null,
+  9    f_num_rows_t2 number not null,
+ 10    f_num_distinct_t1_x  number,
+ 11    f_num_distinct_t2_x  number,
+ 12    f_num_distinct_t1_y  number,
+ 13    f_num_distinct_t2_y  number,
+ 14    on_sel_x             number,
+ 15    on_sel_y             number,
+ 16    cbo_card             number not null,
+ 17    frm_card             number not null,
+ 18    frm_card_san         number not null,
+ 19    frm_card_nosan       number not null,
+ 20    cbo_card_san         number not null,
+ 21    cbo_card_nosan       number not null,
+ 22    irf                  varchar2(4 char), -- insane reason flag
+ 23    st1                  number , -- card with the sanity check for t1 applied
+ 24    st2                  number   -- card with the sanity check for t2 applied
+ 25  );
+
+Table created.
+
+SQL> 
+SQL> drop table t1;
+drop table t1
+           *
+ERROR at line 1:
+ORA-00942: table or view does not exist
+
+
+SQL> drop table t2;
+drop table t2
+           *
+ERROR at line 1:
+ORA-00942: table or view does not exist
+
+
+SQL> 
+SQL> purge recyclebin;
+purge recyclebin
+*
+ERROR at line 1:
+ORA-00900: invalid SQL statement
+
+
+SQL> 
+SQL> -- max 250
+SQL> define num_rows_t1=50
+SQL> -- max 250
+SQL> define num_rows_t2=50
+SQL> 
+SQL> create table t1 as
+  2  select 100000 x, 100000 y, rownum filter, rownum-1 id from dual connect by level <= &num_rows_t1. ;
+
+Table created.
+
+SQL> 
+SQL> create table t2 as
+  2  select 100000 x, 100000 y, rownum filter, rownum-1 id from dual connect by level <= &num_rows_t2. ;
+
+Table created.
+
+SQL> 
+SQL> -- following indexes have no influence at all (checked for paper)
+SQL> --create index t1_x_y_idx on t1 (x, y);
+SQL> --create index t1_y_x_idx on t1 (y, x);
+SQL> --create index t2_x_y_idx on t2 (x, y);
+SQL> --create index t2_y_x_idx on t2 (y, x);
+SQL> --create index t1_x_filter_idx on t1 (x, filter);
+SQL> --create index t1_filter_x_idx on t1 (filter, x);
+SQL> --create index t2_x_filter_idx on t2 (x, filter);
+SQL> --create index t2_filter_x_idx on t2 (filter, x);
+SQL> 
+SQL> -- collect baseline stats, build an histogram on the "filter" column
+SQL> --exec dbms_stats.gather_table_stats (user, 't1', cascade=>true, method_opt => 'for columns x size 1,y size 1, columns filter size 254', estimate_percent=>100);
+SQL> --exec dbms_stats.gather_table_stats (user, 't2', cascade=>true, method_opt => 'for columns x size 1,y size 1, columns filter size 254', estimate_percent=>100);
+SQL> 
+SQL> drop sequence get_cbo_card_seq;
+
+Sequence dropped.
+
+SQL> create sequence get_cbo_card_seq;
+
+Sequence created.
+
+SQL> 
+SQL> alter system flush shared_pool;
+
+System altered.
+
+SQL> 
+SQL> -- this is to prevent the 10g "multi-column join key sanity check" from masking the core algorithm
+SQL> define opt_join_sel_sanity_check=true;
+SQL> alter session set "_optimizer_join_sel_sanity_check"=&opt_join_sel_sanity_check.;
+
+Session altered.
+
+SQL> 
+SQL> -- this procedure parses the statement, and fetches the relevant CBO cardinality
+SQL> -- estimates from v$sql_plan
+SQL> create or replace procedure get_cbo_card (
+  2    p_desired_f_num_rows_t1 number,
+  3    p_desired_f_num_rows_t2 number,
+  4    p_cbo_card              out number,
+  5    p_f_num_rows_t1         out number,
+  6    p_f_num_rows_t2         out number
+  7  )
+  8  is
+  9    l_stmt long;
+ 10    l_cursor sys_refcursor;
+ 11    l_seq_val int;
+ 12    l_address      v$sql.address%type;
+ 13    l_hash_value   v$sql.hash_value%type;
+ 14    l_child_number v$sql.child_number%type;
+ 15    l_filter_pred_t1   varchar2 (1000);
+ 16    l_filter_pred_t2   varchar2 (1000);
+ 17  
+ 18    function calc_filter_pred (p_desired_f_num_rows int)
+ 19    return varchar2
+ 20    is
+ 21    begin
+ 22      if p_desired_f_num_rows > 250 then
+ 23        raise_application_error (-20001, 'cannot produce desired filtered card for p_desired_f_num_rows='||p_desired_f_num_rows);
+ 24      end if;
+ 25  
+ 26      if p_desired_f_num_rows = 1 then
+ 27        return '<= 1';
+ 28      else
+ 29       return '< '||p_desired_f_num_rows;
+ 30      end if;
+ 31    end;
+ 32  begin
+ 33    l_filter_pred_t1 := calc_filter_pred (p_desired_f_num_rows_t1);
+ 34    l_filter_pred_t2 := calc_filter_pred (p_desired_f_num_rows_t2);
+ 35  
+ 36    select get_cbo_card_seq.nextval into l_seq_val from dual;
+ 37    l_stmt := 'select /*+ ordered use_hash(t2) get_cbo_card_tag '|| l_seq_val || '  */  t1.*, t2.* '
+ 38           || ' from t1, t2 '
+ 39           || 'where t1.x = t2.x '
+ 40           || '  and t1.y = t2.y '
+ 41           || '  and t1.filter '||l_filter_pred_t1
+ 42           || '  and t2.filter '||l_filter_pred_t2;
+ 43  
+ 44    open l_cursor for l_stmt;
+ 45    close l_cursor;
+ 46  
+ 47    select address, hash_value, child_number
+ 48      into l_address, l_hash_value, l_child_number
+ 49      from v$sql
+ 50     where sql_text = l_stmt
+ 51       and rownum = 1;
+ 52  
+ 53    for r in (select operation, object_name, cardinality, options
+ 54                from v$sql_plan
+ 55               where address      = l_address
+ 56                 and hash_value   = l_hash_value
+ 57                 and child_number = l_child_number
+ 58                 and id > 0)
+ 59    loop
+ 60      -- dbms_output.put_line ('"'||r.operation||'" - "'||r.options||'"');
+ 61      if r.operation like ('%JOIN') then
+ 62        p_cbo_card := r.cardinality;
+ 63      elsif r.operation in ('TABLE ACCESS') then
+ 64        if r.object_name = 'T1' then
+ 65          p_f_num_rows_t1 := r.cardinality;
+ 66        elsif r.object_name = 'T2' then
+ 67          p_f_num_rows_t2 := r.cardinality;
+ 68        end if;
+ 69      end if;
+ 70    end loop;
+ 71  
+ 72    if p_desired_f_num_rows_t1 != p_f_num_rows_t1 then
+ 73      raise_application_error (-20002, 'cannot produce desired f_num_rows_t1='||p_desired_f_num_rows_t1||' p_f_num_rows_t1='||p_f_num_rows_t1);
+ 74    end if;
+ 75     if p_desired_f_num_rows_t2 != p_f_num_rows_t2 then
+ 76      raise_application_error (-20003, 'cannot produce desired f_num_rows_t2='||p_desired_f_num_rows_t2||' p_f_num_rows_t2='||p_f_num_rows_t2);
+ 77    end if;
+ 78  
+ 79  end get_cbo_card;
+ 80  /
+
+Procedure created.
+
+SQL> show errors
+No errors.
+SQL> 
+SQL> alter system flush shared_pool;
+
+System altered.
+
+SQL> 
+SQL> create or replace procedure test
+  2  is
+  3    l_db_version number;
+  4    l_dummy_v varchar2(100 char);
+  5    l_compat  varchar2(100 char);
+  6    l_cbo_card number;
+  7    l_cbo_card_san number;
+  8    l_cbo_card_nosan number;
+  9    l_f_num_rows_t1 number;
+ 10    l_f_num_rows_t2 number;
+ 11    l_num_distinct_t1_x number;
+ 12    l_num_distinct_t1_y number;
+ 13    l_num_distinct_t2_x number;
+ 14    l_num_distinct_t2_y number;
+ 15    l_num_rows_t1 number;
+ 16    l_num_rows_t2 number;
+ 17    l_frm_card number;
+ 18    l_frm_card_san number;
+ 19    l_frm_card_nosan number;
+ 20    l_f_num_distinct_t1_x    number;
+ 21    l_f_num_distinct_t1_y    number;
+ 22    l_f_num_distinct_t1_mult number;
+ 23    l_f_num_distinct_t2_x    number;
+ 24    l_f_num_distinct_t2_y    number;
+ 25    l_f_num_distinct_t2_mult number;
+ 26    l_num_test int := 0;
+ 27    l_desired_num_distinct_t1_x number := null;
+ 28    l_desired_num_distinct_t1_y number := null;
+ 29    l_desired_num_distinct_t2_x number := null;
+ 30    l_desired_num_distinct_t2_y number := null;
+ 31    l_desired_f_num_rows_t1 number := null;
+ 32    l_desired_f_num_rows_t2 number := null;
+ 33    l_desired_nr_t1 number := null;
+ 34    l_desired_nr_t2 number := null;
+ 35    l_join_filter_sel_t1_y number;
+ 36    l_join_filter_sel_t2_y number;
+ 37    l_interval_ratio number;
+ 38    l_min_t1_x number; l_max_t1_x number;
+ 39    l_min_t1_y number; l_max_t1_y number;
+ 40    l_min_t2_x number; l_max_t2_x number;
+ 41    l_min_t2_y number; l_max_t2_y number;
+ 42    l_sel_x number;
+ 43    l_sel_y number;
+ 44    l_sel_xy number;
+ 45    l_sel_xy_san number;
+ 46    l_multi_join_key_card_t1 number;
+ 47    l_multi_join_key_card_t2 number;
+ 48    l_f_multi_join_key_card_t1 number;
+ 49    l_f_multi_join_key_card_t2 number;
+ 50    l_straight_f_num_distinct_t1 number;
+ 51    l_straight_f_num_distinct_t2 number;
+ 52    l_straight_f_num_distinct_t1_x number;
+ 53    l_straight_f_num_distinct_t1_y number;
+ 54    l_straight_f_num_distinct_t2_x number;
+ 55    l_straight_f_num_distinct_t2_y number;
+ 56    l_insane_reason_flag results.irf%type;
+ 57    l_t1_is_insane varchar2(1 char);
+ 58    l_t2_is_insane varchar2(1 char);
+ 59    l_dummy number;
+ 60  
+ 61    function get_next (p_curr number, p_min number, p_max number, p_step number)
+ 62    return number
+ 63    is
+ 64      l_ret number;
+ 65    begin
+ 66      if p_step < 1 then
+ 67        raise_application_error (-20001, 'illegal p_step='||p_step);
+ 68      end if;
+ 69      if p_curr is null then return p_min; end if;
+ 70      if p_curr = p_max then return null;  end if;
+ 71      l_ret := p_curr + p_step;
+ 72      if l_ret > p_max then return p_max; else return l_ret; end if;
+ 73    end get_next;
+ 74  
+ 75    function get_distinct (p_table_name varchar2, p_column_name varchar2)
+ 76    return number
+ 77    is
+ 78      l_ret number;
+ 79    begin
+ 80      select num_distinct
+ 81        into l_ret
+ 82        from user_tab_columns
+ 83       where table_name = p_table_name
+ 84         and column_name = p_column_name;
+ 85      return l_ret;
+ 86    end get_distinct;
+ 87  
+ 88    procedure check_intervals (p_max_t1 number, p_min_t1 number, p_max_t2 number, p_min_t2 number)
+ 89    is
+ 90    begin
+ 91      if (p_min_t2 between p_min_t1 and p_max_t1) and (p_max_t2 between p_min_t1 and p_max_t1) then return; end if;
+ 92      if (p_min_t1 between p_min_t2 and p_max_t2) and (p_max_t1 between p_min_t2 and p_max_t2) then return; end if;
+ 93      raise_application_error (-20088, 'one interval does not include the other '||p_min_t1||' '||p_max_t1||' '||p_min_t2||' '||p_max_t2);
+ 94    end check_intervals;
+ 95  
+ 96    procedure set_column_data (p_table varchar2, p_column varchar2, p_desired_num_distinct varchar2)
+ 97    is
+ 98      l_distribution_type varchar2(10 char) := 'mod';
+ 99      l_perfect_overlap   varchar2(1 char) := 'N';
+100    begin
+101      if l_distribution_type = 'random' then
+102        execute immediate 'update '||p_table||' set '||p_column||'= trunc(dbms_random.value(0,'||p_desired_num_distinct||'))';
+103        execute immediate 'update '||p_table||' set '||p_column||'= rownum-1 where rownum <= '|| p_desired_num_distinct;
+104        if l_perfect_overlap = 'Y' then
+105          execute immediate 'update '||p_table||' set '||p_column||'= 1e5 where  '||p_column||'= '|| (p_desired_num_distinct-1);
+106        end if;
+107      elsif l_distribution_type = 'mod' then
+108        execute immediate 'update '||p_table||' set '||p_column||'= least (rownum-1, '||(p_desired_num_distinct-1)||')';
+109        if l_perfect_overlap = 'Y' then
+110          execute immediate 'update '||p_table||' set '||p_column||'= 1e5 where  '||p_column||'= '|| (p_desired_num_distinct-1);
+111        end if;
+112      end if;
+113    end set_column_data;
+114  begin
+115    dbms_random.seed (0);
+116  
+117    dbms_utility.db_version (l_dummy_v, l_compat);
+118    l_db_version := to_number (substr (l_compat, 1, instr (l_compat, '.')-1));
+119  
+120    loop
+121      l_desired_nr_t1 := get_next (l_desired_nr_t1, 11, &num_rows_t1., &num_rows_t1.);
+122      exit when l_desired_nr_t1 is null;
+123      delete from t1;
+124      insert into t1(x,y,filter,id)
+125      select 100000 x, 100000 y, rownum filter, rownum-1 id from dual connect by level <= l_desired_nr_t1 ;
+126  
+127      dbms_stats.gather_table_stats (user, 't1', cascade=>true, method_opt => 'for columns x size 1,y size 1, columns filter size 254', estimate_percent=>100);
+128  
+129      select num_rows
+130        into l_num_rows_t1
+131        from user_tables
+132       where table_name = 'T1';
+133  
+134    loop
+135      l_desired_nr_t2 := get_next (l_desired_nr_t2, 11, &num_rows_t2., &num_rows_t2.);
+136      exit when l_desired_nr_t2 is null;
+137      delete from t2;
+138      insert into t2(x,y,filter, id)
+139      select 100000 x, 100000 y, rownum filter, rownum-1 id from dual connect by level <= l_desired_nr_t2 ;
+140  
+141      dbms_stats.gather_table_stats (user, 't2', cascade=>true, method_opt => 'for columns x size 1,y size 1, columns filter size 254', estimate_percent=>100);
+142  
+143      select num_rows
+144        into l_num_rows_t2
+145        from user_tables
+146       where table_name = 'T2';
+147  
+148    loop
+149      l_desired_num_distinct_t1_x := get_next (l_desired_num_distinct_t1_x, 2, l_num_rows_t1, 8);
+150      --l_desired_num_distinct_t1_x := get_next (l_desired_num_distinct_t1_x, 20, 20, trunc(l_num_rows_t1/5));
+151      exit when l_desired_num_distinct_t1_x is null;
+152  
+153      set_column_data ('t1', 'x', l_desired_num_distinct_t1_x);
+154      select min(x), max(x) into l_min_t1_x, l_max_t1_x from t1;
+155  
+156      -- refresh statistics of column "t1.x"
+157      -- using SIZE 254 (checked only by setting SIZE 254 simultaneously on t1.x, t1.y, t2.x, t2.y) does not change
+158      -- the output if the sanity checks are disabled, does change it when they are enabled (checked for paper)
+159      dbms_stats.gather_table_stats (user, 't1', cascade => true, method_opt => 'for columns x size 1', estimate_percent => 100);
+160      l_num_distinct_t1_x := get_distinct ('T1', 'X');
+161  
+162      loop
+163        l_desired_num_distinct_t1_y := get_next (l_desired_num_distinct_t1_y, 2, l_num_rows_t1, 8);
+164        --l_desired_num_distinct_t1_y := get_next (l_desired_num_distinct_t1_y, 2, 2, 2);
+165        exit when l_desired_num_distinct_t1_y is null;
+166  
+167        set_column_data ('t1', 'y', l_desired_num_distinct_t1_y);
+168        select min(y), max(y) into l_min_t1_y, l_max_t1_y from t1;
+169  
+170        -- refresh statistics of column "t1.y"
+171        -- using SIZE 254 (checked only by setting SIZE 254 simultaneously on t1.x, t1.y, t2.x, t2.y) does not change
+172        -- the output if the sanity checks are disabled, does change it when they are enabled (checked for paper)
+173        dbms_stats.gather_table_stats (user, 't1', cascade => true, method_opt => 'for columns y size 1', estimate_percent => 100);
+174        l_num_distinct_t1_y := get_distinct ('T1', 'Y');
+175  
+176        loop
+177          l_desired_num_distinct_t2_x := get_next (l_desired_num_distinct_t2_x, 2, l_num_rows_t2, 8);
+178          --l_desired_num_distinct_t2_x := get_next (l_desired_num_distinct_t2_x, 2, 2, trunc(l_num_rows_t2/5));
+179          exit when l_desired_num_distinct_t2_x is null;
+180  
+181          set_column_data ('t2', 'x', l_desired_num_distinct_t2_x);
+182          -- update t2 set x = x + 0.5 * (l_desired_num_distinct_t1_x-1); -- note: variable overlap
+183          select min(x), max(x) into l_min_t2_x, l_max_t2_x from t2;
+184  
+185          -- refresh statistics of column "t2.x"
+186          -- using SIZE 254 (checked only by setting SIZE 254 simultaneously on t1.x, t1.y, t2.x, t2.y) does not change
+187          -- the output if the sanity checks are disabled, does change it when they are enabled (checked for paper)
+188          dbms_stats.gather_table_stats (user, 't2', cascade => true, method_opt => 'for columns x size 1', estimate_percent => 100);
+189          l_num_distinct_t2_x := get_distinct ('T2', 'X');
+190  
+191          loop
+192            l_desired_num_distinct_t2_y := get_next (l_desired_num_distinct_t2_y, 2, l_num_rows_t2, 8);
+193            --l_desired_num_distinct_t2_y := get_next (l_desired_num_distinct_t2_y, 20, 20, 2);
+194  
+195            exit when l_desired_num_distinct_t2_y is null;
+196  
+197            set_column_data ('t2', 'y', l_desired_num_distinct_t2_y);
+198            select min(y), max(y) into l_min_t2_y, l_max_t2_y from t2;
+199  
+200            -- refresh statistics of column "t2.y"
+201            -- using SIZE 254 (checked only by setting SIZE 254 simultaneously on t1.x, t1.y, t2.x, t2.y) does not change
+202            -- the output if the sanity checks are disabled, does change it when they are enabled (checked for paper)
+203            dbms_stats.gather_table_stats (user, 't2', cascade => true, method_opt => 'for columns y size 1', estimate_percent => 100);
+204            l_num_distinct_t2_y := get_distinct ('T2', 'Y');
+205  
+206            loop
+207              l_desired_f_num_rows_t1 := get_next (l_desired_f_num_rows_t1, 1, l_num_rows_t1, 8);
+208              --l_desired_f_num_rows_t1 := get_next (l_desired_f_num_rows_t1, 1, l_num_rows_t1, 1);
+209              exit when l_desired_f_num_rows_t1 is null;
+210  
+211              loop
+212                l_desired_f_num_rows_t2 := get_next (l_desired_f_num_rows_t2, 1, l_num_rows_t2, 8);
+213                --l_desired_f_num_rows_t2 := get_next (l_desired_f_num_rows_t2, 200, 200, 1);
+214                exit when l_desired_f_num_rows_t2 is null;
+215  
+216                execute immediate 'alter session set "_optimizer_join_sel_sanity_check"=false';
+217                get_cbo_card (l_desired_f_num_rows_t1, l_desired_f_num_rows_t2, l_cbo_card_nosan,
+218                              l_f_num_rows_t1, l_f_num_rows_t2);
+219                execute immediate 'alter session set "_optimizer_join_sel_sanity_check"=true';
+220                get_cbo_card (l_desired_f_num_rows_t1, l_desired_f_num_rows_t2, l_cbo_card_san,
+221                              l_dummy, l_dummy);
+222  
+223                l_f_num_distinct_t1_x    := null; l_f_num_distinct_t2_x    := null;
+224                l_f_num_distinct_t1_y    := null; l_f_num_distinct_t2_y    := null;
+225                l_multi_join_key_card_t1 := null; l_multi_join_key_card_t2 := null;
+226                l_insane_reason_flag     := null;
+227  
+228                if is_disjunct_interval (l_min_t1_x, l_max_t1_x, l_min_t2_x, l_max_t2_x) = 1 or
+229                   is_disjunct_interval (l_min_t1_y, l_max_t1_y, l_min_t2_y, l_max_t2_y) = 1
+230                then
+231                  -- disjunct interval => selectivity = 0 (from 10053 trace)
+232                  l_sel_xy := 0;
+233                else
+234                  -- join on x first
+235                  l_f_num_distinct_t1_x := yao ( l_num_distinct_t1_x, l_f_num_rows_t1, l_num_rows_t1 );
+236                  l_f_num_distinct_t2_x := yao ( l_num_distinct_t2_x, l_f_num_rows_t2, l_num_rows_t2 );
+237                  l_sel_x := 1 / ceil (greatest (round(l_f_num_distinct_t1_x,2), round(l_f_num_distinct_t2_x,2)));
+238  
+239                  -- test per "un intervallo deve essere dentro l'altro"
+240                  --check_intervals (l_max_t1_x, l_min_t1_x, l_max_t2_x, l_min_t2_x);
+241  
+242                  /*if (l_max_t1_x - l_min_t1_x) <= (l_max_t2_x - l_min_t2_x) then
+243                    l_join_filter_sel_t1_y := 1;
+244                    l_join_filter_sel_t2_y := (l_max_t1_x - l_min_t1_x) / (l_max_t2_x - l_min_t2_x);
+245                  else
+246                    l_join_filter_sel_t1_y := (l_max_t2_x - l_min_t2_x) / (l_max_t1_x - l_min_t1_x);
+247                    l_join_filter_sel_t2_y := 1;
+248                  end if;*/
+249  
+250                  l_join_filter_sel_t1_y := overlapping_ratio_a ( l_min_t1_x, l_max_t1_x, l_min_t2_x, l_max_t2_x);
+251                  l_join_filter_sel_t2_y := overlapping_ratio_b ( l_min_t1_x, l_max_t1_x, l_min_t2_x, l_max_t2_x);
+252  
+253                  if l_join_filter_sel_t1_y = 0 or l_join_filter_sel_t2_y= 0 then
+254                    -- if overlapping_ratio = 0 (intersection of intervals is a single point) =>
+255                    -- selectivity = 1 (from 10053 trace), probably because we have num_distinct=1
+256                    -- and so 1/num_distinct = 1 (or because of f_num_distinct -> 1 as the overlapping
+257                    -- interval decreases)
+258                    l_sel_y := 1;
+259                  else
+260                    l_f_num_distinct_t1_y := yao ( l_num_distinct_t1_y, l_join_filter_sel_t1_y * l_f_num_rows_t1, l_num_rows_t1 );
+261                    l_f_num_distinct_t2_y := yao ( l_num_distinct_t2_y, l_join_filter_sel_t2_y * l_f_num_rows_t2, l_num_rows_t2 );
+262  
+263                    l_sel_y := 1 / ceil (greatest (round(l_f_num_distinct_t1_y,2), round(l_f_num_distinct_t2_y,2)));
+264                  end if;
+265  
+266                  l_sel_xy := l_sel_x * l_sel_y;
+267  
+268                  -- join selectivity multicolumn sanity checks
+269                  -- when the selectivity is labeled as "insane" => fallback to lower bound
+270                  l_insane_reason_flag := null;
+271                  if 1=1  then
+272                    -- multi join key cards (from 10053 trace)
+273                    l_multi_join_key_card_t1 := least ( l_num_distinct_t1_x * l_num_distinct_t1_y, l_num_rows_t1);
+274                    l_multi_join_key_card_t2 := least ( l_num_distinct_t2_x * l_num_distinct_t2_y, l_num_rows_t2);
+275                    /*
+276                    -- filtered multi join key cards
+277                    l_f_multi_join_key_card_t1 := least (l_multi_join_key_card_t1, l_f_num_rows_t1);
+278                    l_f_multi_join_key_card_t2 := least (l_multi_join_key_card_t2, l_f_num_rows_t2);
+279                    -- straight (without join filter sel) filtered num distincts
+280                    l_straight_f_num_distinct_t1_x := yao ( l_num_distinct_t1_x, l_f_num_rows_t1, l_num_rows_t1 );
+281                    l_straight_f_num_distinct_t2_x := yao ( l_num_distinct_t2_x, l_f_num_rows_t2, l_num_rows_t2 );
+282                    l_straight_f_num_distinct_t1_y := yao ( l_num_distinct_t1_y, l_f_num_rows_t1, l_num_rows_t1 );
+283                    l_straight_f_num_distinct_t2_y := yao ( l_num_distinct_t2_y, l_f_num_rows_t2, l_num_rows_t2 );
+284                    -- straight table distinct values
+285                    l_straight_f_num_distinct_t1 := ceil (l_straight_f_num_distinct_t1_x) * ceil (l_straight_f_num_distinct_t1_y);
+286                    l_straight_f_num_distinct_t2 := ceil (l_straight_f_num_distinct_t2_x) * ceil (l_straight_f_num_distinct_t2_y);
+287                    l_t1_is_insane := 'N'; l_t2_is_insane := 'N';
+288                    -- NB the = in >= is confirmed by using an unfiltered join on two tables
+289                    -- with nr >> nd(x)*nd(y), so that swru(nd,..)=nd, fnd=nd, sfnd(..)=mjkc(..),
+290                    -- eg join_card_04.sql [Lewis, CBO, page 272]. Whatever the combination of
+291                    -- nd, the sanity checks always trigger for both, and the CBO takes 1/greatest(mjkc(t1),mjkc)t2))
+292                    if l_straight_f_num_distinct_t1 >= l_f_multi_join_key_card_t1 then
+293                      l_insane_reason_flag := l_insane_reason_flag || '1';
+294                      l_t1_is_insane := 'Y';
+295                      l_sel_xy := 1 / l_multi_join_key_card_t1; -- confirmed by where (cbo_card_nosan != cbo_card_san) and cbo_card_san not in (st1, st2) => 0 rows selected
+296                    end if;
+297                    if l_straight_f_num_distinct_t2 >= l_f_multi_join_key_card_t2 then
+298                      l_insane_reason_flag := l_insane_reason_flag || '2';
+299                      l_t2_is_insane := 'Y';
+300                      l_sel_xy := 1 / l_multi_join_key_card_t2; -- confirmed by where (cbo_card_nosan != cbo_card_san) and cbo_card_san not in (st1, st2) => 0 rows selected
+301                    end if;
+302                    -- use the most selective if both multicolumn sanity checks apply
+303                    if l_t1_is_insane = 'Y' and l_t2_is_insane = 'Y' then
+304                       l_sel_xy := 1 / greatest ( l_multi_join_key_card_t1, l_multi_join_key_card_t2 );
+305                    end if;
+306                    */
+307                    l_sel_xy_san := 1 / greatest ( l_multi_join_key_card_t1, l_multi_join_key_card_t2 );
+308                  end if;
+309  
+310                end if; -- if is_disjunt_interval()
+311  
+312                l_frm_card_nosan := l_f_num_rows_t1 * l_f_num_rows_t2 * l_sel_xy;
+313                l_frm_card_san   := l_f_num_rows_t1 * l_f_num_rows_t2 * l_sel_xy_san;
+314  
+315                if lower(trim('&opt_join_sel_sanity_check.')) = 'true' then
+316                  l_frm_card := l_frm_card_san;
+317                  l_cbo_card := l_cbo_card_san;
+318                else
+319                  l_frm_card := l_frm_card_nosan;
+320                  l_cbo_card := l_cbo_card_nosan;
+321                end if;
+322  
+323                -- CBO round()s the final card (from 10053 trace)
+324                if 1=1 then
+325                  l_frm_card := round (l_frm_card);
+326                  if l_frm_card < 1 then
+327                    l_frm_card := 1;
+328                  end if;
+329                end if;
+330  
+331                insert into results (num_rows_t1, num_rows_t2,
+332                                     num_distinct_t1_x, num_distinct_t1_y, num_distinct_t2_x, num_distinct_t2_y,
+333                                     f_num_distinct_t1_x, f_num_distinct_t1_y, f_num_distinct_t2_x, f_num_distinct_t2_y,
+334                                     on_sel_x, on_sel_y, f_num_rows_t1, f_num_rows_t2,
+335                                     cbo_card, frm_card, frm_card_san, frm_card_nosan, cbo_card_san, cbo_card_nosan, irf,
+336                                     st1, st2)
+337                  values (l_num_rows_t1, l_num_rows_t2,
+338                          l_num_distinct_t1_x, l_num_distinct_t1_y, l_num_distinct_t2_x, l_num_distinct_t2_y,
+339                          l_f_num_distinct_t1_x, l_f_num_distinct_t1_y, l_f_num_distinct_t2_x, l_f_num_distinct_t2_y,
+340                          1/decode(l_sel_x,null,null,l_sel_x), 1/decode(l_sel_y,null,null,l_sel_y), l_f_num_rows_t1, l_f_num_rows_t2,
+341                          l_cbo_card, l_frm_card, l_frm_card_san, l_frm_card_nosan, l_cbo_card_san, l_cbo_card_nosan, l_insane_reason_flag,
+342                          round(l_f_num_rows_t1 * l_f_num_rows_t2 / l_multi_join_key_card_t1),
+343                          round(l_f_num_rows_t1 * l_f_num_rows_t2 / l_multi_join_key_card_t2)
+344                         );
+345                commit;
+346  
+347                l_num_test := l_num_test + 1;
+348                if mod (l_num_test, 121) = 0 then
+349                  execute immediate 'alter system flush shared_pool';
+350                end if;
+351  
+352              end loop;
+353            end loop;
+354          end loop;
+355        end loop;
+356      end loop;
+357    end loop;
+358    end loop;
+359    end loop;
+360  end;
+361  /
+
+Procedure created.
+
+SQL> show errors;
+No errors.
+SQL> 
+SQL> exec test;
+
+PL/SQL procedure successfully completed.
+
+SQL> 
+SQL> col num_rows_t1 head "nr_t1" form 999
+SQL> col num_rows_t2 head "nr_t2" form 999
+SQL> col f_num_rows_t1 head "fnr_t1" form 999
+SQL> col f_num_rows_t2 head "fnr_t2" form 999
+SQL> col num_distinct_t1_x head "nd_t1_x"  form 999
+SQL> col num_distinct_t1_y head "nd_t1_y"  form 999
+SQL> col num_distinct_t2_x head "nd_t2_x"  form 999
+SQL> col num_distinct_t2_y head "nd_t2_y"  form 999
+SQL> col f_num_distinct_t1_x head "fnd_t1_x" form 9999.999
+SQL> col f_num_distinct_t1_y head "fnd_t1_y" form 9999.999
+SQL> col f_num_distinct_t2_x head "fnd_t2_x" form 9999.999
+SQL> col f_num_distinct_t2_y head "fnd_t2_y" form 9999.999
+SQL> col on_sel_x head "1/selx" form 9999
+SQL> col on_sel_y head "1/sely" form 9999
+SQL> col irf form a3
+SQL> col st1 form 9999
+SQL> col st2 form 9999
+SQL> 
+SQL> prompt formula with sanity checks
+formula with sanity checks
+SQL> select avg ( cbo_card_san - greatest(1,round(frm_card_san)) ), stddev ( cbo_card_san - greatest(1,round(frm_card_san)) ),
+  2         avg ( abs( cbo_card_san - greatest(1,round(frm_card_san)) ) ), stddev ( abs ( cbo_card_san - greatest(1,round(frm_card_san)) ) ) from results;
+
+AVG(CBO_CARD_SAN-GREATEST(1,ROUND(FRM_CARD_SAN))) STDDEV(CBO_CARD_SAN-GREATEST(1,ROUND(FRM_CARD_SAN))) AVG(ABS(CBO_CARD_SAN-GREATEST(1,ROUND(FRM_CARD_SAN))))
+------------------------------------------------- ---------------------------------------------------- ------------------------------------------------------
+STDDEV(ABS(CBO_CARD_SAN-GREATEST(1,ROUND(FRM_CARD_SAN))))
+---------------------------------------------------------
+                                       -.00135565                                           .036794348                                             .001355654
+                                               .036794348
+
+
+1 row selected.
+
+SQL> 
+SQL> -- note: percentage of error has frm_card_san as denominator
+SQL> select avg ( 100 * abs (cbo_card_san - greatest(1,round(frm_card_san))) / greatest(1,round(frm_card_san)) ) perc_error,
+  2         stddev ( 100 * abs (cbo_card_san - greatest(1,round(frm_card_san))) / greatest(1,round(frm_card_san)) ) from results;
+
+PERC_ERROR STDDEV(100*ABS(CBO_CARD_SAN-GREATEST(1,ROUND(FRM_CARD_SAN)))/GREATEST(1,ROUND(FRM_CARD_SAN)))
+---------- ---------------------------------------------------------------------------------------------
+.005457878                                                                                    .148359172
+
+1 row selected.
+
+SQL> 
+SQL> -- test exact formula
+SQL> col perc form 99.99
+SQL> col perc_cum form 999.99
+SQL> select r2.*, trunc (100 * cnt_ratio, 2) as perc,
+  2               trunc (100 * sum(cnt_ratio) over (order by abs_error), 2) as perc_cum
+  3    from (
+  4  select r.*, ratio_to_report (cnt) over() cnt_ratio
+  5    from (
+  6  select round (abs (cbo_card_san - greatest(1,round(frm_card_san))), 1) as abs_error, count(*) cnt
+  7    from results
+  8   group by round (abs (cbo_card_san - greatest(1,round(frm_card_san))), 1)
+  9         ) r
+ 10         ) r2
+ 11   order by 1;
+
+ ABS_ERROR        CNT  CNT_RATIO   PERC PERC_CUM
+---------- ---------- ---------- ------ --------
+         0     175323 .998644346  99.86    99.86
+         1        238 .001355654    .13   100.00
+
+2 rows selected.
+
+SQL> 
+SQL> prompt formula without sanity checks
+formula without sanity checks
+SQL> select avg ( cbo_card_nosan - greatest(1,round(frm_card_nosan)) ), stddev ( cbo_card_nosan - greatest(1,round(frm_card_nosan)) ),
+  2         avg ( abs( cbo_card_nosan - greatest(1,round(frm_card_nosan)) ) ), stddev ( abs ( cbo_card_nosan - greatest(1,round(frm_card_nosan)) ) ) from results;
+
+AVG(CBO_CARD_NOSAN-GREATEST(1,ROUND(FRM_CARD_NOSAN))) STDDEV(CBO_CARD_NOSAN-GREATEST(1,ROUND(FRM_CARD_NOSAN))) AVG(ABS(CBO_CARD_NOSAN-GREATEST(1,ROUND(FRM_CARD_NOSAN))))
+----------------------------------------------------- -------------------------------------------------------- ----------------------------------------------------------
+STDDEV(ABS(CBO_CARD_NOSAN-GREATEST(1,ROUND(FRM_CARD_NOSAN))))
+-------------------------------------------------------------
+                                           -.01560711                                               .364314702                                                 .020482909
+                                                   .364073116
+
+
+1 row selected.
+
+SQL> 
+SQL> -- note: percentage of error has frm_card_nosan as denominator
+SQL> select avg ( 100 * abs (cbo_card_nosan - greatest(1,round(frm_card_nosan))) / greatest(1,round(frm_card_nosan)) ) perc_error,
+  2         stddev ( 100 * abs (cbo_card_nosan - greatest(1,round(frm_card_nosan))) / greatest(1,round(frm_card_nosan)) ) from results;
+
+PERC_ERROR STDDEV(100*ABS(CBO_CARD_NOSAN-GREATEST(1,ROUND(FRM_CARD_NOSAN)))/GREATEST(1,ROUND(FRM_CARD_NOSAN)))
+---------- ---------------------------------------------------------------------------------------------------
+.286217162                                                                                          3.41503088
+
+1 row selected.
+
+SQL> 
+SQL> -- test exact formula
+SQL> col perc form 99.99
+SQL> col perc_cum form 999.99
+SQL> select r2.*, trunc (100 * cnt_ratio, 2) as perc,
+  2               trunc (100 * sum(cnt_ratio) over (order by abs_error), 2) as perc_cum
+  3    from (
+  4  select r.*, ratio_to_report (cnt) over() cnt_ratio
+  5    from (
+  6  select round (abs (cbo_card_nosan - greatest(1,round(frm_card_nosan))), 1) as abs_error, count(*) cnt
+  7    from results
+  8   group by round (abs (cbo_card_nosan - greatest(1,round(frm_card_nosan))), 1)
+  9         ) r
+ 10         ) r2
+ 11   order by 1;
+
+ ABS_ERROR        CNT  CNT_RATIO   PERC PERC_CUM
+---------- ---------- ---------- ------ --------
+         0     173961 .990886359  99.08    99.08
+         1       1118 .006368157    .63    99.72
+         2        166  .00094554    .09    99.82
+         3         90 .000512642    .05    99.87
+         4         44 .000250625    .02    99.89
+         5         42 .000239233    .02    99.92
+         6         24 .000136705    .01    99.93
+         7         22 .000125313    .01    99.94
+         8         30 .000170881    .01    99.96
+         9         12 .000068352    .00    99.97
+        10          4 .000022784    .00    99.97
+        13         12 .000068352    .00    99.97
+        16         12 .000068352    .00    99.98
+        19         24 .000136705    .01   100.00
+
+14 rows selected.
+
+SQL> 
+SQL> doc
+SQL> 
+SQL> spool off

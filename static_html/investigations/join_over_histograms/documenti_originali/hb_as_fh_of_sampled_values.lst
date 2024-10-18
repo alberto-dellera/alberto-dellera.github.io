@@ -1,0 +1,84 @@
+SQL> 
+SQL> create table t1 as select rownum as value from dual connect by level <= 9;
+
+Table created.
+
+SQL> update t1 set value = 9 where value >= 5;
+
+5 rows updated.
+
+SQL> 
+SQL> exec dbms_stats.gather_table_stats (user, 't1', method_opt=>'for all columns size 3', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> 
+SQL> select value from t1 order by value;
+
+     VALUE                                                                                                                                            
+----------                                                                                                                                            
+         1                                                                                                                                            
+         2                                                                                                                                            
+         3                                                                                                                                            
+         4                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+         9                                                                                                                                            
+
+9 rows selected.
+
+SQL> 
+SQL> select endpoint_value as value,
+  2  	    endpoint_number as ep
+  3    from user_histograms
+  4   where table_name = 'T1' and column_name = 'VALUE'
+  5   order by endpoint_number;
+
+     VALUE         EP                                                                                                                                 
+---------- ----------                                                                                                                                 
+         1          0                                                                                                                                 
+         3          1                                                                                                                                 
+         9          3                                                                                                                                 
+
+SQL> 
+SQL> -- create a table with the sampled values, minus the first
+SQL> create table t1_sampled (value number);
+
+Table created.
+
+SQL> insert into t1_sampled (value) values (3);
+
+1 row created.
+
+SQL> insert into t1_sampled (value) values (9);
+
+1 row created.
+
+SQL> insert into t1_sampled (value) values (9);
+
+1 row created.
+
+SQL> 
+SQL> exec dbms_stats.gather_table_stats (user, 't1_sampled', method_opt=>'for all columns size 254', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> 
+SQL> select endpoint_value as value,
+  2  	    endpoint_number as ep
+  3    from user_histograms
+  4   where table_name = 'T1_SAMPLED' and column_name = 'VALUE'
+  5  union all
+  6  select 1 as value, 0 as ep from dual
+  7   order by ep;
+
+     VALUE         EP                                                                                                                                 
+---------- ----------                                                                                                                                 
+         1          0                                                                                                                                 
+         3          1                                                                                                                                 
+         9          3                                                                                                                                 
+
+SQL> 
+SQL> spool off

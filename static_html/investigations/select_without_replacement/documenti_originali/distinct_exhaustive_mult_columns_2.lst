@@ -1,0 +1,322 @@
+SQL> 
+SQL> -- end of initialization section
+SQL> 
+SQL> set echo on
+SQL> 
+SQL> drop table results;
+drop table results
+           *
+ERROR at line 1:
+ORA-00942: table or view does not exist
+
+
+SQL> 
+SQL> create table results (
+  2    num_rows          int    not null,
+  3    num_distinct_x    int    not null,
+  4    num_distinct_y    int    not null,
+  5    f_num_rows        number not null,
+  6    cbo_card          number not null,
+  7    frm_card          number not null
+  8  );
+
+Table created.
+
+SQL> 
+SQL> drop table t purge;
+drop table t purge
+             *
+ERROR at line 1:
+ORA-00933: SQL command not properly ended
+
+
+SQL> 
+SQL> -- max 250
+SQL> define num_rows_t=50
+SQL> 
+SQL> create table t as
+  2  select 1000 as x, 1000 as y, rownum filter from dual connect by level <= &num_rows_t. ;
+
+Table created.
+
+SQL> 
+SQL> -- create index t_x_y_idx on t (x,y); -- no difference (tested for paper)
+SQL> -- create index t_y_x_idx on t (y,x); -- no difference (tested for paper)
+SQL> 
+SQL> -- collect baseline stats, build an histogram on the "filter" column
+SQL> exec dbms_stats.gather_table_stats (user, 't', cascade=>true, method_opt => 'for columns x size 1, y size 1, filter size 254', estimate_percent=>100);
+
+PL/SQL procedure successfully completed.
+
+SQL> 
+SQL> drop sequence get_cbo_card_seq;
+drop sequence get_cbo_card_seq
+              *
+ERROR at line 1:
+ORA-02289: sequence does not exist
+
+
+SQL> create sequence get_cbo_card_seq;
+
+Sequence created.
+
+SQL> 
+SQL> alter system flush shared_pool;
+
+System altered.
+
+SQL> 
+SQL> -- this procedure parses the statement, and fetches the relevant CBO cardinality
+SQL> -- estimates from v$sql_plan
+SQL> create or replace procedure get_cbo_card (
+  2    p_desired_f_num_rows number,
+  3    p_cbo_card           out number,
+  4    p_f_num_rows         out number
+  5  )
+  6  is
+  7    l_stmt long;
+  8    l_cursor sys_refcursor;
+  9    l_seq_val int;
+ 10    l_address      v$sql.address%type;
+ 11    l_hash_value   v$sql.hash_value%type;
+ 12    l_child_number v$sql.child_number%type;
+ 13    l_filter_pred_t varchar2 (1000);
+ 14  
+ 15    function calc_filter_pred (p_desired_f_num_rows int)
+ 16    return varchar2
+ 17    is
+ 18    begin
+ 19      if p_desired_f_num_rows > 250 then
+ 20        raise_application_error (-20001, 'cannot produce desired filtered card for p_desired_f_num_rows='||p_desired_f_num_rows);
+ 21      end if;
+ 22  
+ 23      if p_desired_f_num_rows = 1 then
+ 24        return '<= 1';
+ 25      else
+ 26       return '< '||p_desired_f_num_rows;
+ 27      end if;
+ 28    end;
+ 29  begin
+ 30    l_filter_pred_t := calc_filter_pred (p_desired_f_num_rows);
+ 31  
+ 32    select get_cbo_card_seq.nextval into l_seq_val from dual;
+ 33    --l_stmt := 'select /*+ get_cbo_card_m_tag '|| l_seq_val || ' */  x, y,  count(*) from t where filter '||l_filter_pred_t||' group by x, y';
+ 34    l_stmt := 'select /*+ get_cbo_card_m_tag '|| l_seq_val || ' */ distinct x, y from t where filter '||l_filter_pred_t;
+ 35  
+ 36    open l_cursor for l_stmt;
+ 37    close l_cursor;
+ 38  
+ 39    select address, hash_value, child_number
+ 40      into l_address, l_hash_value, l_child_number
+ 41      from v$sql
+ 42     where sql_text = l_stmt
+ 43       and rownum = 1;
+ 44  
+ 45    for r in (select operation, object_name, cardinality, options
+ 46                from v$sql_plan
+ 47               where address      = l_address
+ 48                 and hash_value   = l_hash_value
+ 49                 and child_number = l_child_number
+ 50                 and id > 0)
+ 51    loop
+ 52      -- dbms_output.put_line ('"'||r.operation||'" - "'||r.options||'"');
+ 53      if r.operation in ('SORT','HASH') and (r.options like 'GROUP BY%' or r.options = 'UNIQUE') then
+ 54        p_cbo_card := r.cardinality;
+ 55      elsif r.operation in ('TABLE ACCESS','INDEX') then
+ 56        p_f_num_rows := r.cardinality;
+ 57      end if;
+ 58    end loop;
+ 59  
+ 60    if p_desired_f_num_rows != p_f_num_rows then
+ 61      raise_application_error (-20002, 'cannot produce desired f_num_rows='||p_desired_f_num_rows||' p_f_num_rows='||p_f_num_rows);
+ 62    end if;
+ 63  
+ 64  end get_cbo_card;
+ 65  /
+
+Procedure created.
+
+SQL> show errors
+No errors.
+SQL> 
+SQL> variable c number
+SQL> variable f number
+SQL> exec get_cbo_card (4, :c, :f);
+
+PL/SQL procedure successfully completed.
+
+SQL> print c
+
+         C
+----------
+         1
+
+SQL> print f
+
+         F
+----------
+         4
+
+SQL> 
+SQL> create or replace procedure test
+  2  is
+  3    l_cbo_card number;
+  4    l_f_num_rows number;
+  5    l_num_distinct_x number;
+  6    l_num_distinct_y number;
+  7    l_num_rows number;
+  8    l_frm_card number;
+  9    l_frm_card_min number;
+ 10    l_frm_card_max number;
+ 11    l_f_num_distinct_x number;
+ 12    l_f_num_distinct_y number;
+ 13    l_num_test int := 0;
+ 14    l_desired_num_distinct_x number := null;
+ 15    l_desired_num_distinct_y number := null;
+ 16    l_desired_f_num_rows number := null;
+ 17  
+ 18    function get_next (p_curr number, p_min number, p_max number, p_step number)
+ 19    return number
+ 20    is
+ 21      l_ret number;
+ 22    begin
+ 23      if p_curr is null then return p_min; end if;
+ 24      if p_curr = p_max then return null;  end if;
+ 25      l_ret := p_curr + p_step;
+ 26      if l_ret > p_max then return p_max; else return l_ret; end if;
+ 27    end get_next;
+ 28  begin
+ 29  
+ 30    select num_rows
+ 31      into l_num_rows
+ 32      from user_tables
+ 33     where table_name = 'T';
+ 34  
+ 35    loop
+ 36      l_desired_num_distinct_x := get_next (l_desired_num_distinct_x, 1, l_num_rows, 1);
+ 37      exit when l_desired_num_distinct_x is null;
+ 38  
+ 39      update t set x = least (rownum, l_desired_num_distinct_x);
+ 40  
+ 41      -- refresh statistics of column "x"
+ 42      dbms_stats.gather_table_stats (user, 't', cascade => true, method_opt => 'for columns x size 1', estimate_percent => 100);
+ 43  
+ 44      select num_distinct
+ 45        into l_num_distinct_x
+ 46        from user_tab_columns
+ 47       where table_name = 'T'
+ 48         and column_name = 'X';
+ 49  
+ 50      update t set y = 0;
+ 51  
+ 52      loop
+ 53        l_desired_num_distinct_y := get_next (l_desired_num_distinct_y, 1, l_num_rows, 1);
+ 54        exit when l_desired_num_distinct_y is null;
+ 55  
+ 56        update t set y = least (rownum, l_desired_num_distinct_y);
+ 57  
+ 58        -- refresh statistics of column "y"
+ 59        dbms_stats.gather_table_stats (user, 't', cascade => true, method_opt => 'for columns y size 1', estimate_percent => 100);
+ 60  
+ 61        select num_distinct
+ 62          into l_num_distinct_y
+ 63          from user_tab_columns
+ 64         where table_name = 'T'
+ 65           and column_name = 'Y';
+ 66  
+ 67        loop
+ 68          l_desired_f_num_rows := get_next (l_desired_f_num_rows, 1, l_num_rows, 1);
+ 69          exit when l_desired_f_num_rows is null;
+ 70  
+ 71          get_cbo_card (l_desired_f_num_rows, l_cbo_card, l_f_num_rows);
+ 72  
+ 73          l_f_num_distinct_x := swru ( l_num_distinct_x, l_f_num_rows, l_num_rows );
+ 74          l_f_num_distinct_y := swru ( l_num_distinct_y, l_f_num_rows, l_num_rows );
+ 75  
+ 76          l_frm_card_max := l_f_num_distinct_x * l_f_num_distinct_y;
+ 77  
+ 78          l_frm_card := ( 1/sqrt(2) ) * ( l_frm_card_max );
+ 79  
+ 80          -- sanity check: f_num_distinct (T.X, T.Y) cannot be above f_num_rows(T)
+ 81          if l_frm_card > l_f_num_rows then
+ 82            l_frm_card := l_f_num_rows;
+ 83          end if;
+ 84  
+ 85          -- CBO round()s the final card
+ 86          if 1=1 then
+ 87            l_frm_card := round (l_frm_card);
+ 88            if l_frm_card < 1 then
+ 89              l_frm_card := 1;
+ 90            end if;
+ 91          end if;
+ 92  
+ 93          insert into results (num_rows, num_distinct_x, num_distinct_y, f_num_rows, cbo_card, frm_card)
+ 94            values (l_num_rows, l_num_distinct_x, l_num_distinct_y, l_f_num_rows, l_cbo_card, l_frm_card);
+ 95          commit;
+ 96  
+ 97          l_num_test := l_num_test + 1;
+ 98          --if mod (l_num_test, 121) = 0 then
+ 99          --  execute immediate 'alter system flush shared_pool';
+100          --end if;
+101  
+102        end loop;
+103      end loop;
+104    end loop;
+105  end;
+106  /
+
+Procedure created.
+
+SQL> show errors;
+No errors.
+SQL> 
+SQL> exec test;
+
+PL/SQL procedure successfully completed.
+
+SQL> 
+SQL> select avg ( cbo_card - round(frm_card) ), stddev ( cbo_card - round(frm_card) ),
+  2         avg ( abs( cbo_card - round(frm_card) ) ), stddev ( abs ( cbo_card - round(frm_card) ) ) from results;
+
+AVG(CBO_CARD-ROUND(FRM_CARD)) STDDEV(CBO_CARD-ROUND(FRM_CARD)) AVG(ABS(CBO_CARD-ROUND(FRM_CARD))) STDDEV(ABS(CBO_CARD-ROUND(FRM_CARD)))
+----------------------------- -------------------------------- ---------------------------------- -------------------------------------
+                      .042328                       .209171438                             .04308                            .209017854
+
+1 row selected.
+
+SQL> 
+SQL> -- note: percentage of error has cbo_card as denominator
+SQL> select avg ( 100 * abs (cbo_card - round(frm_card)) / cbo_card ) perc_error,
+  2         stddev ( 100 * abs (cbo_card - round(frm_card)) / cbo_card ) from results;
+
+PERC_ERROR STDDEV(100*ABS(CBO_CARD-ROUND(FRM_CARD))/CBO_CARD)
+---------- --------------------------------------------------
+ .43270003                                         2.96763453
+
+1 row selected.
+
+SQL> 
+SQL> col perc form 99.99
+SQL> col perc_cum form 999.99
+SQL> select r2.*, trunc (100 * cnt_ratio, 2) as perc,
+  2               trunc (100 * sum(cnt_ratio) over (order by abs_error), 2) as perc_cum
+  3    from (
+  4  select r.*, ratio_to_report (cnt) over() cnt_ratio
+  5    from (
+  6  select round (abs (cbo_card - round(frm_card)), 1) as abs_error, count(*) cnt
+  7    from results
+  8   group by round (abs (cbo_card - round(frm_card)), 1)
+  9         ) r
+ 10         ) r2
+ 11   order by 1;
+
+ ABS_ERROR        CNT  CNT_RATIO   PERC PERC_CUM
+---------- ---------- ---------- ------ --------
+         0     119769    .958152  95.81    95.81
+         1       5077    .040616   4.06    99.87
+         2        154    .001232    .12   100.00
+
+3 rows selected.
+
+SQL> 
+SQL> spool off

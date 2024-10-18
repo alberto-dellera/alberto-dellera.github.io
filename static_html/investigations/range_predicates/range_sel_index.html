@@ -1,0 +1,319 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head><title>CBO: (open) range predicate cardinality</title>
+</head><body>
+<b><font size ="+2">Range predicates selectivity</font></b>
+<br
+<br><b>Abstract</b>
+<br>
+<br>An investigation, based on Jonathan Lewis' test case "Discrete Dangers" on page 126 of "<a href="http://www.jlcomp.demon.co.uk/cbo_book/ind_book.html#addenda">Cost Based Oracle</a>", to discover and illustrate the exact formula that the CBO uses to estimate the cardinality for (bounded) range predicates.
+<br>
+<br>The main result is that Jonathan's "standard formula" applies in a wider context than expected (by me at least), allowing for a couple of slight modifications relevant for some (but important) cases only.
+<br>
+<br>We'll start on this page with (open,open) ranges, than we'll continue on the next page with (closed,closed) ranges, and then with (open,closed),(closed,open) on another page. The conclusion is <a href="range_sel_conclusion.html">here</a>.
+<br>
+<br><b>Selection over an infinitesimal range</b>
+<br>
+<br>The script <a href="range_sel_inf.sql">range_sel_inf.sql</a> builds this table (10.2.0.2):
+<pre>
+  create table t as select 10 * mod (rownum-1, 2) x from dual connect by level <= 2000000;
+</pre>
+and then collects statistics without histograms:
+<pre>
+  exec dbms_stats.gather_table_stats (user, 't', method_opt=>'for all columns size 1', estimate_percent=>100);
+</pre>
+The resulting data distribution is
+<pre>
+select x, count(*) from t group by x;
+
+         X   COUNT(*)
+---------- ----------
+         0    1000000
+        10    1000000
+</pre>
+ie, a table with
+<pre>
+  num_distinct = 2
+  num_rows / num_distinct = 1,000,000
+  min_x := min(column x)  = 0
+  max_x := max(column x)  = 10
+</pre>
+
+Now the script runs this series of statements, and collects the CBO estimate of cardinality for each one:
+<pre>
+select x from t where x > 0.1234 and x < 0.1234 + 0.001
+select x from t where x > 0.3456 and x < 0.3456 + 0.001
+..
+select x from t where x > 9.6789 and x < 9.6789 + 0.001
+</pre>
+The template is of course a selection over a (bounded, open) range predicate:
+<pre>
+select x from t where x > low_x and x < low_x + w
+</pre>
+keeping w constant and very small ("infinitesimal"), and letting low_x vary to cover the (minx_, max_x) interval.
+<br>
+<br>If you diagram the estimated cardinality versus low_x, you get the <a href="range_sel_inf_02_data.dat">red line</a> on the following graph:
+<img src="range_sel_inf_data.jpeg">
+<br>
+The <a href="range_sel_inf_03_data.dat">green line</a> (num_distinct=3) is obtained by adding to the table another distinct value (we add 1,000,000 rows to keep num_rows/num_distinct the same):
+<pre>
+insert into t(x) select 6.1 from dual connect by level <= 1000000;
+</pre>
+And the <a href="range_sel_inf_04_data.dat">blue line</a> (num_distinct=4) after adding a fourth distinct value:
+<pre>
+insert into t(x) select 7.42 from dual connect by level <= 1000000;
+</pre>
+By looking at the graphs and the data, we can make the following deductions (the ones labeled by [JLB] are already discussed in Jonathan Lewis' Book quoted above; here I've just verified that they apply to my data sets):
+<ul>
+<li> There's a specular simmetry around the midinterval point 5.0 = (max_x - min_x) / 2, eg the cardinality for 
+     <pre>
+     where x > 0.1         and x < 0.1 + 0.001
+     where x > 0.9 - 0.001 and x < 0.9 
+     </pre> 
+ is the same [JLB]; 
+<li> There's a flat region at the center, surrounded by two lateral bands (ramps) whose width is B = (max_x - min_x) / num_distinct [JLB];
+<li> For ranges completely contained in the central flat region, the cardinality honours the standard formula
+ <pre>
+ cardinality = num_rows * w / (max_x - min_x)
+ </pre>[JLB]
+<li> For ranges completely contained in the lateral bands:
+<ul>
+ <li>the cardinality <b>does not depend on w</b>  but depends only on the value of low_x for the left ramp 
+ <br>(and for symmetry, of high_x = low_x + w for the right ramp).
+ <br>
+ <br>In fact (for num_distinct=4):
+ <pre>
+ SQL> select x from t where x > 0.1 and x < 0.1 + 0.001;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |   960K|  2812K|  1436   (6)| 00:00:18 |
+ |*  1 |  TABLE ACCESS FULL| T    |   960K|  2812K|  1436   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+
+ SQL> select x from t where x > 0.1 and x < 0.1 + 2;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |   960K|  2812K|  1436   (6)| 00:00:18 |
+ |*  1 |  TABLE ACCESS FULL| T    |   960K|  2812K|  1436   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ </pre>
+ <li> the cardinality formula (for the left ramp) is:
+ <pre>
+ let B  = (max_x - min_x) / num_distinct
+ let height_ramp = num_rows / num_distinct 
+ cardinality = height_ramp - height_ramp * (low_x - min_x) / B
+ 
+ Eg for num_distinct=4: B = 2.5; height_ramp = 1,000,000
+ for low_x = 1.765830 => cardinality = 1000000 - 1000000 * (1.765830-0) / 2.5 = 293668 
+ which is exactly the value we observe in the blue line data.
+ </pre>
+ <li> for low_x = min_x (or high_x = max_x for the right ramp), we always get 1 (special case) [JLB]:
+ <pre>
+ SQL> select x from t where x > 0 and x < 0+0.00000000000000001;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |     1 |     3 |  1436   (6)| 00:00:18 |
+ |*  1 |  TABLE ACCESS FULL| T    |     1 |     3 |  1436   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+
+ SQL> select x from t where x > 0 and x < 2.5;
+ --------------------------------------------------------------------------
+ | Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+ --------------------------------------------------------------------------
+ |   0 | SELECT STATEMENT  |      |     1 |     3 |  1436   (6)| 00:00:18 |
+ |*  1 |  TABLE ACCESS FULL| T    |     1 |     3 |  1436   (6)| 00:00:18 |
+ --------------------------------------------------------------------------
+ </pre>
+</ul>
+<li> For ranges overlapping the regions - check the next section.
+</ul>
+<b>Selection over a finite range</b>
+<br>
+<br>The script <a href="range_sel_finite.sql">range_sel_finite.sql</a> repeats the very same steps of the script above, but the statements' template is now
+<pre>
+select x from t where x > low_x and x < high_x
+</pre>
+where low_x = constant = 0.1, and high_x varies to cover the whole interval (low_x, max_x).
+<br>The diagram of the estimated cardinality versus high_x (click to get the data sets for the <a href="range_sel_finite_02_data.dat">red</a>, 
+<a href="range_sel_finite_03_data.dat">green</a> and <a href="range_sel_finite_04_data.dat">blue</a> line) is: 
+
+<img src="range_sel_finite_data.jpeg">
+
+<br>We can make the following deductions:
+<ul>
+<li> The flat region on the left is for high_x <= min_x + B, and it's the same region we described as "left ramp" on the section about the infinitesimal range.
+<br> The flatness, of course, is due to the range being completely inside this region - hence, as we saw, the cardinality depends only on low_x (constant in this case) and not on the width of the range. The formula already discussed above applies.
+<li> As soon as high_x crosses the min_x + B boundary, the CBO breaks the range in two halves (left and right of the boundary), computes the cardinality estimation separately, and than adds them. Let's name this the "<b>formal method of ranges decomposition</b>" since we'll use it again, adapted as necessary.
+<br> Instead of showing by formulae - let's see it directly (for num_distinct=4, min_x + B = 2.5):
+<pre>
+SQL> select x from t where x > 0.1 and x < 7;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |  2760K|  8085K|  1444   (7)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |  2760K|  8085K|  1444   (7)| 00:00:18 |
+--------------------------------------------------------------------------
+
+SQL> select x from t where x > 0.1 and x < 2.5;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |   960K|  2812K|  1436   (6)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |   960K|  2812K|  1436   (6)| 00:00:18 |
+--------------------------------------------------------------------------
+
+SQL> select x from t where x > 2.5 and x < 7;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |  1800K|  5273K|  1444   (7)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |  1800K|  5273K|  1444   (7)| 00:00:18 |
+--------------------------------------------------------------------------
+1800K + 960K = 2760K, as requested.
+</pre>
+<li> The same applies when high_x enters the "right band" region (we have three ranges now to add of course); again for num_distinct=4:
+<pre>
+SQL> select x from t where x > 0.1 and x < 9;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |  3560K|    10M|  1447   (7)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |  3560K|    10M|  1447   (7)| 00:00:18 |
+--------------------------------------------------------------------------
+
+SQL> select x from t where x > 0.1 and x < 2.5;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |   960K|  2812K|  1436   (6)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |   960K|  2812K|  1436   (6)| 00:00:18 |
+--------------------------------------------------------------------------
+
+SQL> select x from t where x > 2.5 and x < 7.5;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |  2000K|  5859K|  1444   (7)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |  2000K|  5859K|  1444   (7)| 00:00:18 |
+--------------------------------------------------------------------------
+
+SQL> select x from t where x > 7.5 and x < 9;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |   600K|  1757K|  1436   (6)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |   600K|  1757K|  1436   (6)| 00:00:18 |
+--------------------------------------------------------------------------
+600K + 2000K + 960K = 3560K, as requested again.
+</pre>
+<li> But a very interesting discovery is that by using the standard formula, we get the <b>same results</b>, even if one of the extremes of the range, or both, is inside one of the two lateral bands - as far as the extremes are not <i>both</i> in the same band. That is, the standard formula validity extends far beyond the "central" region - almost to the whole interval.
+ <br>
+ <br> I've included, in the three data sets drawn in the graph, the column CARD_STND_F that computes the standard formula
+ <pre>
+  cardinality = num_rows * (high_x - low_x) / (max_x - min_x)
+ </pre>
+ and you can verify that it matches perfectly the CBO estimate - for high_x >= min_x + B.
+ <br> 
+ <br>We can quickly check the case of the previous bullet point (where x > 0.1 and x < 9) - the explain plan computes 3560K and in fact
+ <br>cardinality = 4000000 * (9-0.1) / (10-0) = 3560000
+ <br>even if low_x is inside the left band, and high_x is inside the right band.
+ <br>
+ <br>Also for the the other case above (where x > 0.1 and x < 7) - the explain plan computes 2760K and
+ <br>  cardinality = 4000000 * (7 - 0.1) / (10-0) = 2760000
+ <br>even if low_x is inside the left band, and high_x is inside the "central region".
+ <br>
+ <br> That is due to the function of the bands, that can be thought as a <i>precomputation</i> of the value of the standard formula for a selection over the ranges (low_x, min_x + B) and (max_x - B, high_x).
+ <br>
+<li> For the special case of "range extreme matching the interval extreme":
+<br>For num_distinct = 4, low_x = min_x = 0:
+<br> 
+<ul>
+<li> For high_x inside the left band:
+<pre>
+SQL> select x from t where x > 0 and x < 1;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |     1 |     3 |  1436   (6)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |     1 |     3 |  1436   (6)| 00:00:18 |
+--------------------------------------------------------------------------
+
+SQL> select x from t where x > 0 and x < 2.5;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |     1 |     3 |  1436   (6)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |     1 |     3 |  1436   (6)| 00:00:18 |
+--------------------------------------------------------------------------
+The standard formula definitely does not apply.
+</pre>
+<li> For high_x inside the "central region":
+<pre>
+SQL> select x from t where x > 0 and x < 3;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |   200K|   585K|  1437   (6)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |   200K|   585K|  1437   (6)| 00:00:18 |
+--------------------------------------------------------------------------
+Standard formula = 4000000 * (3-0) / (10-0) = 1200K (no match).
+Error = 1200K - 200K = 1000K.
+
+SQL> select x from t where x > 0 and x < 7.5;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |  2000K|  5859K|  1444   (7)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |  2000K|  5859K|  1444   (7)| 00:00:18 |
+--------------------------------------------------------------------------
+Standard formula = 4000000 * (7.5-0) / (10-0) =  3000K (no match).
+Error = 3000K - 2000K = 1000K.
+</pre>
+<li> For high_x inside the right band:
+<pre>
+SQL> select x from t where x > 0 and x < 9;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |  2600K|  7617K|  1444   (7)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |  2600K|  7617K|  1444   (7)| 00:00:18 |
+--------------------------------------------------------------------------
+Standard formula = 4000000 * (9 - 0) / (10-0) = 3600K (no match).
+Error = 3600K - 2600K = 1000K.
+
+SQL> select x from t where x > 0 and x < 10;
+--------------------------------------------------------------------------
+| Id  | Operation         | Name | Rows  | Bytes | Cost (%CPU)| Time     |
+--------------------------------------------------------------------------
+|   0 | SELECT STATEMENT  |      |  2000K|  5859K|  1444   (7)| 00:00:18 |
+|*  1 |  TABLE ACCESS FULL| T    |  2000K|  5859K|  1444   (7)| 00:00:18 |
+--------------------------------------------------------------------------
+Standard formula = 4000000 * (10 -0) / (10-0) =  4000K (no match).
+Error = 4000K - 2000K = <b>2000K</b>.
+</pre>
+</ul>
+That's consistent with the normal case, as soon as you subtract from the standard formula num_rows/num_distinct for each range estreme matching one of the interval estremata. 
+</ul>
+
+Let's move to the <a href="range_sel_closed.html">closed range case<a/>.
+
+<br><br>
+<i>For corrections / feedback:<br>
+alberto.dellera@gmail.com</i>
+<br><br>
+
+<!-- Start of StatCounter Code -->
+<script type="text/javascript" language="javascript">
+var sc_project=2420231; 
+var sc_invisible=1; 
+var sc_partition=23; 
+var sc_security="d66786aa"; 
+var sc_text=2; 
+</script>
+
+<script type="text/javascript" language="javascript" src="http://www.statcounter.com/counter/counter.js"></script><noscript><a href="http://www.statcounter.com/" target="_blank"><img  src="http://c24.statcounter.com/counter.php?sc_project=2420231&java=0&security=d66786aa&invisible=0" alt="site stats" border="0"></a> </noscript>
+<!-- End of StatCounter Code -->
+
+</body></html>

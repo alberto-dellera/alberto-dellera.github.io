@@ -1,0 +1,385 @@
+SQL> 
+SQL> create or replace package set_histo is
+  2  
+  3    -- sets the histogram (and other statistics) for the table p_table_name
+  4    -- using dbms_stats.set_column_stats, dbms_stats.prepare_column_stats, dbms_stats.set_table_stats.
+  5    -- The name of the column you want to set the statistics for, and the
+  6    -- histogram, are taken from p_hist_table, that has to have the following definition
+  7    --   create table <histogram table name> (<column name> <column_type, diff_ep int).
+  8    --   <column name> must be the same as the column of p_table_name you want to set the statistics for;
+  9    --   diff_ep is the difference in the endpoint_number you want to set.
+ 10    -- p_num_rows_per_bkt is the desired number of rows per unpopular bucket for an Height-Based Histogram;
+ 11    -- pass 0 to set a Frequency Histograms. num_rows is set accordingly.
+ 12    -- p_density is the density you want to set; pass null to let dbms_stats calculate the
+ 13    -- default density.
+ 14    -- num_distinct is always set to the maximum compatible with the statistic (it doesn't affect
+ 15    -- the join cardinality formula anyway, unless a fallback to the stanndard formula happens).
+ 16    -- Note: only some types for <column name> are currently supported.
+ 17  
+ 18    procedure set (
+ 19  	 p_table_name	     varchar2,
+ 20  	 p_hist_table	     varchar2,
+ 21  	 p_num_rows_per_bkt  number,
+ 22  	 p_density	     number,
+ 23  	 p_install_also      varchar2 default 'Y'
+ 24    );
+ 25  
+ 26    -- installs the supporting objects.
+ 27    -- It needs to be called directly only if you wish to avoid the overhead
+ 28    -- of object creations - it is called implicitly by "set" if p_install_also = 'Y',
+ 29    -- the default. Useful only for repeated calls from the automatic formula validator
+ 30    procedure install (
+ 31  	 p_table_name	     varchar2,
+ 32  	 p_hist_table	     varchar2
+ 33    );
+ 34  
+ 35  end set_histo;
+ 36  /
+
+Package created.
+
+SQL> show errors;
+No errors.
+SQL> 
+SQL> create or replace package body set_histo is
+  2  
+  3  procedure install (
+  4    p_table_name	   varchar2,
+  5    p_hist_table	   varchar2
+  6  )
+  7  is
+  8    l_column_name varchar2(30);
+  9    l_data_type   varchar2(30);
+ 10  begin
+ 11    select column_name, data_type
+ 12  	 into l_column_name, l_data_type
+ 13  	 from user_tab_columns
+ 14  	where table_name = upper (p_hist_table)
+ 15  	  and column_name != 'DIFF_EP';
+ 16  
+ 17    execute immediate
+ 18  	'create or replace view '||p_hist_table||'_wanted as
+ 19  	 select x as actual_value, diff_ep, sum (diff_ep) over (order by '||l_column_name||') as ep
+ 20  	   from '||p_hist_table||'
+ 21  	 order by actual_value';
+ 22  
+ 23    execute immediate
+ 24  	'create or replace view '||p_hist_table||'_wanted_nocompr_hb as
+ 25  	 select h.'||l_column_name||' as actual_value
+ 26  	   from '||p_hist_table||' h, (select rownum i from dual connect by level <= 256) s
+ 27  	  where h.diff_ep >= s.i
+ 28  	  union all
+ 29  	 select min('||l_column_name||')
+ 30  	   from '||p_hist_table||' h
+ 31  	  order by actual_value';
+ 32  
+ 33  	execute immediate
+ 34  	'create or replace view '||p_hist_table||'_wanted_nocompr_fh as
+ 35  	 select h.'||l_column_name||' as actual_value,	h.diff_ep
+ 36  	   from '||p_hist_table||' h
+ 37  	  union all
+ 38  	 select min('||l_column_name||'), 0
+ 39  	   from '||p_hist_table||' h
+ 40  	  order by actual_value';
+ 41  
+ 42  	execute immediate
+ 43  	'create or replace view '||p_hist_table||'_final_hist as
+ 44  	 with x as (
+ 45  	 select endpoint_value value, endpoint_number ep, endpoint_actual_value,
+ 46  		endpoint_number - nvl (lag (endpoint_number) over (order by endpoint_number), 0) as diff_ep,
+ 47  		max (endpoint_number) over() as max_ep
+ 48  	   from user_tab_histograms
+ 49  	  where table_name = '''||upper(p_table_name)||'''
+ 50  	    and column_name = '''||l_column_name||'''
+ 51  	 )
+ 52  	 select value, ep, diff_ep, endpoint_actual_value,
+ 53  		decode (diff_ep, 1, cast(null as varchar2(7 char)), 0, ''-'', ''POPULAR'') as popularity,
+ 54  		diff_ep
+ 55  		* (select num_rows from user_tables  where table_name = '''||upper(p_table_name)||''')
+ 56  		/ max_ep as counts,
+ 57  		diff_ep
+ 58  		* (select num_rows from user_tables  where table_name = '''||upper(p_table_name)||''')
+ 59  		/ (max_ep - 1) as counts2
+ 60  	   from x
+ 61  	 ';
+ 62    dbms_output.put_line ('supporting objects installed for '||p_table_name||','||p_hist_table||'.');
+ 63  end install;
+ 64  
+ 65  -- set histogram on table
+ 66  -- if p_num_rows_per_bkt = 0, computes a frequency histogram
+ 67  procedure set (
+ 68    p_table_name	   varchar2,
+ 69    p_hist_table	   varchar2,
+ 70    p_num_rows_per_bkt  number,
+ 71    p_density	   number,
+ 72    p_install_also	   varchar2 default 'Y'
+ 73  )
+ 74  is
+ 75    l_histogram_type varchar2 (20 char);
+ 76    l_density number;
+ 77    l_avg_col_length number;
+ 78    l_max_ep int;
+ 79    l_num_diff_ep int;
+ 80    l_num_rows int;
+ 81    l_num_distinct int;
+ 82    l_num_unpopulars int;
+ 83    l_actual_values_number	dbms_stats.numarray;
+ 84    l_actual_values_varchar2 dbms_stats.chararray;
+ 85    l_bucket_counts		dbms_stats.numarray;
+ 86    l_srec	       dbms_stats.StatRec;
+ 87    l_stmt varchar2(1000);
+ 88    l_count int;
+ 89    l_column_name varchar2(30);
+ 90    l_data_type   varchar2(30);
+ 91  begin
+ 92    if p_num_rows_per_bkt = 0 then
+ 93  	 l_histogram_type := 'FREQUENCY';
+ 94    else
+ 95  	 l_histogram_type := 'HEIGHT-BALANCED';
+ 96    end if;
+ 97  
+ 98    select column_name, data_type
+ 99  	 into l_column_name, l_data_type
+100  	 from user_tab_columns
+101  	where table_name = upper (p_hist_table)
+102  	  and column_name != 'DIFF_EP';
+103  
+104    dbms_output.put_line (upper(p_table_name)||'.'||l_column_name||': setting a '||l_histogram_type||' histogram from '
+105  			     ||p_hist_table||'.');
+106  
+107    if upper(p_install_also) = 'Y' then
+108  	 install (p_table_name, p_hist_table);
+109    end if;
+110  
+111    execute immediate
+112    'select 1+avg(length('||l_column_name||')),
+113  	       sum(diff_ep) as max_ep,
+114  	       count(*)     as num_diff_ep,
+115  	       sum (case when diff_ep = 1 then 1 else 0 end) as num_unpopulars
+116  	 from '||p_hist_table
+117  	 into l_avg_col_length, l_max_ep, l_num_diff_ep, l_num_unpopulars;
+118  
+119    if l_histogram_type = 'HEIGHT-BALANCED' then
+120  	 l_num_rows := 0 + p_num_rows_per_bkt * l_max_ep;
+121    else
+122  	 l_num_rows := l_max_ep;
+123    end if;
+124  
+125    dbms_output.put_line ('num_rows='||l_num_rows);
+126    dbms_stats.set_table_stats (
+127  	  ownname	=> user,
+128  	  tabname	=> p_table_name,
+129  	  numrows	=> l_num_rows,
+130  	  numblks	=> greatest (trunc(l_num_rows / 10), 1), -- n/a for card
+131  	  avgrlen	=> l_avg_col_length,
+132  	  no_invalidate => false
+133    );
+134  
+135    if l_histogram_type = 'HEIGHT-BALANCED' then
+136  	 -- assume the max number of distinct values possible
+137  	 l_num_distinct := l_num_diff_ep + l_num_unpopulars * (p_num_rows_per_bkt-1);
+138    else
+139  	 l_num_distinct := l_num_diff_ep;
+140    end if;
+141  
+142    if l_num_distinct = 0 then
+143  	 l_num_distinct := 1;
+144    end if;
+145  
+146    if p_density is not null then
+147  	 l_density := p_density;
+148    else
+149  	 if l_histogram_type = 'HEIGHT-BALANCED' then
+150  	   l_density := null;
+151  	 else
+152  	   l_density := 1 / (2 * l_num_rows);
+153  	 end if;
+154    end if;
+155  
+156    -- prepare endpoint array
+157    if l_histogram_type = 'HEIGHT-BALANCED' then
+158  
+159  	 l_stmt := 'select actual_value
+160  		      from '||p_hist_table||'_wanted_nocompr_hb
+161  		     order by actual_value';
+162  
+163  	 if l_data_type = 'NUMBER' then
+164  	   execute immediate l_stmt bulk collect into l_actual_values_number;
+165  	   l_srec.epc := l_actual_values_number.count;
+166  	   dbms_stats.prepare_column_values (l_srec, l_actual_values_number);
+167  	 elsif l_data_type = 'VARCHAR2' then
+168  	   execute immediate l_stmt bulk collect into l_actual_values_varchar2;
+169  	   l_srec.epc := l_actual_values_varchar2.count;
+170  	   dbms_stats.prepare_column_values (l_srec, l_actual_values_varchar2);
+171  	 end if;
+172  
+173    else -- FREQUENCY
+174  
+175  	 l_stmt := 'select actual_value, diff_ep
+176  		      from '||p_hist_table||'_wanted_nocompr_fh
+177  		     order by actual_value, diff_ep'; -- diff_ep=0 is the min value
+178  
+179  	 if l_data_type = 'NUMBER' then
+180  	   execute immediate l_stmt bulk collect into l_actual_values_number, l_bucket_counts;
+181  	   l_srec.epc	 := l_actual_values_number.count;
+182  	   l_srec.bkvals := l_bucket_counts;
+183  	   dbms_stats.prepare_column_values (l_srec, l_actual_values_number);
+184  	 elsif l_data_type = 'VARCHAR2' then
+185  	   execute immediate l_stmt bulk collect into l_actual_values_varchar2, l_bucket_counts;
+186  	   l_srec.epc	 := l_actual_values_varchar2.count;
+187  	   l_srec.bkvals := l_bucket_counts;
+188  	   dbms_stats.prepare_column_values (l_srec, l_actual_values_varchar2);
+189  	 end if;
+190  
+191    end if;
+192  
+193    if l_data_type = 'NUMBER' then
+194  	 dbms_output.put_line ( 'minval='||utl_raw.cast_to_number(l_srec.minval) );
+195  	 dbms_output.put_line ( 'maxval='||utl_raw.cast_to_number(l_srec.maxval) );
+196    elsif l_data_type = 'VARCHAR2' then
+197  	 dbms_output.put_line ( 'minval='||utl_raw.cast_to_varchar2(l_srec.minval) );
+198  	 dbms_output.put_line ( 'maxval='||utl_raw.cast_to_varchar2(l_srec.maxval) );
+199    else
+200  	 dbms_output.put_line ( 'minval='||l_srec.minval );
+201  	 dbms_output.put_line ( 'maxval='||l_srec.maxval );
+202    end if;
+203    dbms_output.put_line ( 'epc='||l_srec.epc );
+204    dbms_output.put_line ( 'eavs='||l_srec.eavs );
+205    dbms_output.put_line ( 'bkvals=');
+206    for i in l_srec.bkvals.first .. l_srec.bkvals.last loop
+207  	 dbms_output.put_line ( l_srec.bkvals (i) );
+208    end loop;
+209    dbms_output.put_line ( 'novals=');
+210    for i in l_srec.novals.first .. l_srec.novals.last loop
+211  	 dbms_output.put_line ( l_srec.novals (i) );
+212    end loop;
+213    dbms_output.put_line ( 'chvals=');
+214    for i in l_srec.chvals.first .. l_srec.chvals.last loop
+215  	 dbms_output.put_line ( l_srec.chvals (i) );
+216    end loop;
+217    dbms_output.put_line ( 'num_distinct='||l_num_distinct);
+218    dbms_output.put_line ( 'density='||l_density);
+219  
+220    dbms_stats.set_column_stats (
+221  	 ownname => user,
+222  	 tabname => p_table_name,
+223  	 colname => l_column_name,
+224  	 distcnt => l_num_distinct,
+225  	 density => l_density,
+226  	 nullcnt => 0,
+227  	 srec	 => l_srec,
+228  	 avgclen => l_avg_col_length,
+229  	 no_invalidate => false
+230    );
+231  
+232    -- some sanity checks on the set histogram
+233    execute immediate 'select count(*) from (select ep from '||p_hist_table||'_final_hist minus select ep from '||p_hist_table||'_wanted)'
+234  	  into l_count;
+235    if l_count > 0 then
+236  	 raise_application_error (-20001, 'wrong histogram set - 1');
+237    end if;
+238    execute immediate 'select count(*) from (select ep from '||p_hist_table||'_wanted  minus select ep from '||p_hist_table||'_final_hist)'
+239  	  into l_count;
+240    if l_count > 0 then
+241  	 raise_application_error (-20002, 'wrong histogram set - 2');
+242    end if;
+243  
+244  end set;
+245  
+246  end set_histo;
+247  /
+
+Package body created.
+
+SQL> show errors;
+No errors.
+SQL> 
+SQL> -- installation sanity check
+SQL> 
+SQL> /*
+SQL> 
+SQL> drop table hb_t1;
+SQL> drop table t1;
+SQL> drop table hb_t2;
+SQL> drop table t2;
+SQL> 
+SQL> define data_type=varchar2(20)
+SQL> define data_type=number
+SQL> 
+SQL> create table t1 (x &data_type.);
+SQL> create table t2 (x &data_type.);
+SQL> 
+SQL> create table hb_t1 (x &data_type. not null, diff_ep int not null);
+SQL> insert into hb_t1 (x,  diff_ep) values (0	,  1);
+SQL> --insert into hb_t1 (x,  diff_ep) values (10,  1);
+SQL> --insert into hb_t1 (x,  diff_ep) values (20,  1);
+SQL> --insert into hb_t1 (x,  diff_ep) values (30,  1);
+SQL> --insert into hb_t1 (x,  diff_ep) values (40,  1);
+SQL> --insert into hb_t1 (x,  diff_ep) values (50,  1);
+SQL> --insert into hb_t1 (x,  diff_ep) values (60,  1);
+SQL> --insert into hb_t1 (x,  diff_ep) values (70,  1);
+SQL> --insert into hb_t1 (x,  diff_ep) values (80,  1);
+SQL> --insert into hb_t1 (x,  diff_ep) values (90,  1);
+SQL> --insert into hb_t1 (x,  diff_ep) values (100,  1);
+SQL> insert into hb_t1 (x,  diff_ep) values (9999, 10);
+SQL> insert into hb_t1 (x,  diff_ep) values (10000, 1);
+SQL> insert into hb_t1 (x,  diff_ep) values (10001, 1);
+SQL> --insert into hb_t1 (x,  diff_ep) values (10002, 1);
+SQL> --insert into hb_t1 (x,  diff_ep) values (10003, 1);
+SQL> --insert into hb_t1 (x,  diff_ep) values (10004, 1);
+SQL> --insert into hb_t1 (x,  diff_ep) values (10005, 1);
+SQL> --insert into hb_t1 (x,  diff_ep) values (10006, 1);
+SQL> --insert into hb_t1 (x,  diff_ep) values (10007, 1);
+SQL> --update hb_t1 set diff_ep =diff_ep * 100;
+SQL> update hb_t1 set x = lpad (x, 20, '0');
+SQL> commit;
+SQL> 
+SQL> create table hb_t2 (x &data_type. not null, diff_ep int not null);
+SQL> insert into hb_t2 (x,  diff_ep) values (0 ,  1);
+SQL> --insert into hb_t2 (x,  diff_ep) values (10,  1);
+SQL> --insert into hb_t2 (x,  diff_ep) values (20,  6);
+SQL> --insert into hb_t2 (x,  diff_ep) values (30.8,  2);
+SQL> --insert into hb_t2 (x,  diff_ep) values (40,  1);
+SQL> --insert into hb_t2 (x,  diff_ep) values (50.8,  1);
+SQL> --insert into hb_t2 (x,  diff_ep) values (60.8,  1);
+SQL> --insert into hb_t2 (x,  diff_ep) values (70.5,  1);
+SQL> --insert into hb_t2 (x,  diff_ep) values (80,  1);
+SQL> --insert into hb_t2 (x,  diff_ep) values (90,  1);
+SQL> --insert into hb_t2 (x,  diff_ep) values (100,  1);
+SQL> insert into hb_t2 (x,  diff_ep) values (9999, 15);
+SQL> insert into hb_t2 (x,  diff_ep) values (10000, 3);
+SQL> insert into hb_t2 (x,  diff_ep) values (10001, 1);
+SQL> --insert into hb_t2 (x,  diff_ep) values (10002, 1);
+SQL> --insert into hb_t2 (x,  diff_ep) values (10003, 1);
+SQL> --insert into hb_t2 (x,  diff_ep) values (10004, 1);
+SQL> --insert into hb_t2 (x,  diff_ep) values (10005, 1);
+SQL> --insert into hb_t2 (x,  diff_ep) values (10006, 1);
+SQL> update hb_t2 set x = lpad (x, 20, '0');
+SQL> commit;
+SQL> 
+SQL> select * from  hb_t1 order by x;
+SQL> 
+SQL> exec set_histo.set ('t1', 'hb_t1', 0, 0.03846153);
+SQL> exec set_histo.set ('t2', 'hb_t2', 10, 1);
+SQL> 
+SQL> col endpoint_actual_value form a20
+SQL> col lv form a20
+SQL> col hv form a20
+SQL> 
+SQL> select num_rows from user_tables where table_name = 'T1';
+SQL> select num_distinct, density, num_buckets, histogram, utl_raw.cast_to_varchar2(low_value) lv, utl_raw.cast_to_varchar2(high_value) hv from user_tab_columns where table_name = 'T1';
+SQL> select * from hb_t1_final_hist;
+SQL> 
+SQL> select num_rows from user_tables where table_name = 'T2';
+SQL> select num_distinct, density, num_buckets, histogram, utl_raw.cast_to_varchar2(low_value) lv, utl_raw.cast_to_varchar2(high_value) hv from user_tab_columns where table_name = 'T2';
+SQL> select * from hb_t2_final_hist;
+SQL> 
+SQL> set autotrace traceonly explain
+SQL> select count(*)
+SQL>   from t1 a, t2 b
+SQL>  where a.x = b.x;
+SQL> set autotrace off
+SQL> 
+SQL> */
+SQL> 
+SQL> spool off

@@ -1,0 +1,75 @@
+SQL> 
+SQL> alter session set workarea_size_policy=manual;
+
+Session altered.
+
+SQL> alter session set sort_area_size=100000000;
+
+Session altered.
+
+SQL> alter session set hash_area_size=100000000;
+
+Session altered.
+
+SQL> 
+SQL> --------------------------
+SQL> -- check correctnes of FFT implementation against Rob van Wijk's Model solution
+SQL> --------------------------
+SQL> 
+SQL> -- build a random P(s,1)
+SQL> exec dbms_random.seed (1);
+
+PL/SQL procedure successfully completed.
+
+SQL> delete from die;
+
+6 rows deleted.
+
+SQL> insert into die (face_id, face_value, probability)
+  2  select rownum, rownum*2, dbms_random.value (0, 1)
+  3    from dual connect by level <= 10;
+
+10 rows created.
+
+SQL> update die set probability = probability / (select sum(probability) from die);
+
+10 rows updated.
+
+SQL> commit;
+
+Commit complete.
+
+SQL> 
+SQL> delete from fft_test;
+
+0 rows deleted.
+
+SQL> delete from model_test;
+
+0 rows deleted.
+
+SQL> commit;
+
+Commit complete.
+
+SQL> 
+SQL> exec fft_test_p    (1, 6, 1);
+
+PL/SQL procedure successfully completed.
+
+SQL> exec model_test_p  (1, 6, 1);
+
+PL/SQL procedure successfully completed.
+
+SQL> 
+SQL> select *
+  2    from fft_test, model_test
+  3   where fft_test.N = model_test.N
+  4     and fft_test.s = model_test.s
+  5     and abs (fft_test.probability-model_test.probability) > 1e6
+  6   order by fft_test.N, fft_test.s;
+
+no rows selected
+
+SQL> 
+SQL> spool off

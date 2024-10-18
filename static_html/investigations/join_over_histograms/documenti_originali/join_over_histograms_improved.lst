@@ -1,0 +1,714 @@
+SQL> 
+SQL> create or replace package join_over_histograms_improved is
+  2  
+  3    -- computes the improved paper formula for the join over the table/columns set in the
+  4    -- first 4 formal parameters. If p_install_also = 'Y', the default,
+  5    -- it (re)installs the supporting objects (see method "install" below) transparently
+  6    -- before computing. Leave the default at 'Y' for simple experiments.
+  7    -- Example: select join_over_histograms_improved.get ('t1', 'value', 't2', 'value') from dual;
+  8    function get (
+  9  	 p_lhs_table_name  varchar2,
+ 10  	 p_lhs_column_name varchar2,
+ 11  	 p_rhs_table_name  varchar2,
+ 12  	 p_rhs_column_name varchar2,
+ 13  	 p_install_also    varchar2 default 'Y',
+ 14  	 p_no_fallback	   varchar2 default 'Y',
+ 15  	 p_correct_notpop  varchar2 default 'Y'
+ 16    )
+ 17    return number;
+ 18  
+ 19    -- same as "get", returns warnings also.
+ 20    function get_with_warn (
+ 21  	 p_lhs_table_name  varchar2,
+ 22  	 p_lhs_column_name varchar2,
+ 23  	 p_rhs_table_name  varchar2,
+ 24  	 p_rhs_column_name varchar2,
+ 25  	 p_warnings	   out varchar2,
+ 26  	 p_install_also    varchar2 default 'Y',
+ 27  	 p_no_fallback	   varchar2 default 'Y',
+ 28  	 p_correct_notpop  varchar2 default 'Y'
+ 29    )
+ 30    return number;
+ 31  
+ 32    -- installs the supporting objects (adapters for the data dictionary views,
+ 33    -- temp tables, join histograms calculators, etc).
+ 34    -- It needs to be called directly only if you wish to avoid the overhead
+ 35    -- of object creations - it is called implicitly by "get" if p_install_also = 'Y',
+ 36    -- the default. Useful only for repeated calls from the automatic formula validator.
+ 37    procedure install (
+ 38  	 p_lhs_table_name  varchar2,
+ 39  	 p_lhs_column_name varchar2,
+ 40  	 p_rhs_table_name  varchar2,
+ 41  	 p_rhs_column_name varchar2
+ 42    );
+ 43  
+ 44    -------------------------------------
+ 45    -- private interface (called by supporting objects internally)
+ 46    -------------------------------------
+ 47    function minMV  return number deterministic;
+ 48    function maxMV  return number deterministic;
+ 49    function minmin return number deterministic;
+ 50    function maxmin return number deterministic;
+ 51    function minmax return number deterministic;
+ 52    function maxmax return number deterministic;
+ 53    function maxPV  return number deterministic;
+ 54    function min_density		   return number deterministic;
+ 55    function rhs_num_rows_times_density return number deterministic;
+ 56    function lhs_num_rows_times_density return number deterministic;
+ 57  
+ 58    g_last_cbo_standard_8i	 number;
+ 59    g_last_cbo_standard_9i10g number;
+ 60  
+ 61  end join_over_histograms_improved;
+ 62  /
+
+Package created.
+
+SQL> show errors;
+No errors.
+SQL> 
+SQL> create or replace package body join_over_histograms_improved is
+  2  
+  3  type t_simple_stats is record (
+  4    num_rows     number,
+  5    num_distinct number,
+  6    low_value    raw(32),
+  7    high_value   raw(32),
+  8    num_buckets  number
+  9  );
+ 10  
+ 11  g_minMV  number;
+ 12  g_maxMV  number;
+ 13  g_minmin number;
+ 14  g_maxmin number;
+ 15  g_minmax number;
+ 16  g_maxmax number;
+ 17  g_maxPV  number;
+ 18  g_min_density number;
+ 19  g_rhs_num_rows_times_density number;
+ 20  g_lhs_num_rows_times_density number;
+ 21  
+ 22  function minMV  return number is begin return g_minMV ; end;
+ 23  function maxMV  return number is begin return g_maxMV ; end;
+ 24  function minmin return number is begin return g_minmin; end;
+ 25  function maxmin return number is begin return g_maxmin; end;
+ 26  function minmax return number is begin return g_minmax; end;
+ 27  function maxmax return number is begin return g_maxmax; end;
+ 28  function maxPV  return number is begin return g_maxPV ; end;
+ 29  function min_density		 return number is begin return g_min_density; end;
+ 30  function rhs_num_rows_times_density return number is begin return g_rhs_num_rows_times_density; end;
+ 31  function lhs_num_rows_times_density return number is begin return g_lhs_num_rows_times_density; end;
+ 32  
+ 33  function cbo_standard (
+ 34    p_t1_num_rows	 number,
+ 35    p_t2_num_rows	 number,
+ 36    p_t1_num_distinct number,
+ 37    p_t2_num_distinct number,
+ 38    p_t1_min 	 raw,
+ 39    p_t1_max 	 raw,
+ 40    p_t2_min 	 raw,
+ 41    p_t2_max 	 raw,
+ 42    p_version	 varchar2)
+ 43  return number
+ 44  is
+ 45    function overlapping_ranges (
+ 46  	 p_t1_min	   raw,
+ 47  	 p_t1_max	   raw,
+ 48  	 p_t2_min	   raw,
+ 49  	 p_t2_max	   raw
+ 50    )
+ 51    return boolean
+ 52    is
+ 53    begin
+ 54  	 if p_t1_min = p_t2_min then
+ 55  	   return true;
+ 56  	 end if;
+ 57  	 if p_t1_min > p_t2_min then
+ 58  	   return overlapping_ranges (p_t2_min, p_t2_max, p_t1_min, p_t1_max);
+ 59  	 end if;
+ 60  	 return p_t1_max >= p_t2_min;
+ 61    end;
+ 62  begin
+ 63  
+ 64    -- if cardinality of any table is zero => return 1
+ 65    if p_t1_num_rows * p_t2_num_rows = 0 then
+ 66  	 return 1;
+ 67    end if;
+ 68  
+ 69    -- 9i/10g version: detects non-overlapping ranges
+ 70    if lower (p_version) = '9i/10g' then
+ 71  	 if not overlapping_ranges (p_t1_min, p_t1_max, p_t2_min, p_t2_max) then
+ 72  	   return 1;
+ 73  	 end if;
+ 74    elsif lower (p_version) = '8i' then
+ 75  	 null;
+ 76    else
+ 77  	 raise_application_error (-20002, 'cbo_standard(): wrong p_version='||p_version);
+ 78    end if;
+ 79  
+ 80    return p_t1_num_rows * p_t2_num_rows /
+ 81  	      greatest (p_t1_num_distinct, p_t2_num_distinct);
+ 82  
+ 83  end cbo_standard;
+ 84  
+ 85  -----------------------------------------------------------
+ 86  procedure drop_table_idem (table_in varchar2)
+ 87  is
+ 88    no_such_table exception;
+ 89    pragma exception_init (no_such_table, -942);
+ 90  begin
+ 91    execute immediate 'drop table ' || table_in;
+ 92  exception
+ 93    when no_such_table then
+ 94  	 null;
+ 95  end drop_table_idem;
+ 96  
+ 97  -----------------------------------------------------------
+ 98  procedure install_for_table (
+ 99    p_table_name  varchar2,
+100    p_column_name varchar2,
+101    p_lhr_rhs     varchar2
+102  )
+103  is
+104    l_hist_table_name	 varchar2(30) := 'joh_'||p_lhr_rhs||'_raw_hist';
+105    l_table_stats_table_name  varchar2(30) := 'joh_'||p_lhr_rhs||'_table_stats';
+106    l_column_stats_table_name varchar2(30) := 'joh_'||p_lhr_rhs||'_column_stats';
+107    l_hist_view_name 	 varchar2(30) := 'joh_'||p_lhr_rhs||'_hist';
+108  begin
+109    drop_table_idem (l_hist_table_name);
+110    execute immediate
+111  	 'create table '||l_hist_table_name||' as
+112  	 select endpoint_number ep, endpoint_value value, endpoint_actual_value actual_value
+113  	   from user_histograms where 1=0';
+114  
+115    drop_table_idem (l_table_stats_table_name);
+116    execute immediate
+117  	 'create table '||l_table_stats_table_name||' as
+118  	  select num_rows from user_tables where 1=0';
+119  
+120    drop_table_idem (l_column_stats_table_name);
+121    execute immediate
+122  	 'create table '||l_column_stats_table_name||' as
+123  	  select 0 num_rows, density, num_distinct, 0 max_ep, num_buckets, low_value, high_value from user_tab_columns where 1=0';
+124  
+125    execute immediate
+126  	 'create or replace view '||l_hist_view_name|| ' as
+127  	  with hist_ as (
+128  	    select ep, value, actual_value,
+129  		   lag (ep) over (order by ep) prev_ep,
+130  		   max (ep) over ()	       max_ep
+131  	      from '||l_hist_table_name||'
+132  	  )
+133  	  select hist_.*,
+134  		   (select num_rows from '||l_table_stats_table_name||')
+135  		 * (ep - nvl (prev_ep, 0))
+136  		 / max_ep as counts,
+137  		 decode (ep - nvl (prev_ep, 0), 0, 0, 1, 0, 1) as popularity
+138  	    from hist_';
+139  
+140    dbms_output.put_line ('supporting objects installed for '||p_lhr_rhs||': '||p_table_name||','||p_column_name);
+141  end install_for_table;
+142  
+143  -----------------------------------------------------------
+144  procedure analyze_table (p_table_name varchar2)
+145  is
+146  begin
+147    return;
+148  
+149    dbms_stats.gather_table_stats (
+150  	 user, p_table_name,
+151  	 cascade	  => true,
+152  	 method_opt	  => 'for all columns size 1',
+153  	 estimate_percent => 100,
+154  	 no_invalidate	  => false
+155    );
+156  end analyze_table;
+157  
+158  -----------------------------------------------------------
+159  procedure dump_table_stats (
+160    p_table_name  varchar2,
+161    p_column_name varchar2,
+162    p_lhr_rhs     varchar2
+163  )
+164  is
+165    l_hist_table_name	 varchar2(30) := 'joh_'||p_lhr_rhs||'_raw_hist';
+166    l_table_stats_table_name  varchar2(30) := 'joh_'||p_lhr_rhs||'_table_stats';
+167    l_column_stats_table_name varchar2(30) := 'joh_'||p_lhr_rhs||'_column_stats';
+168  begin
+169    execute immediate 'delete from '||l_hist_table_name;
+170    execute immediate 'insert into '||l_hist_table_name||' (ep, value, actual_value)
+171  	 select endpoint_number ep, endpoint_value value, endpoint_actual_value actual_value
+172  	   from user_histograms where table_name = :1 and column_name = :2'
+173    using upper(p_table_name), upper(p_column_name);
+174    analyze_table (l_hist_table_name);
+175  
+176    execute immediate 'delete from '||l_table_stats_table_name;
+177    execute immediate 'insert into '||l_table_stats_table_name||' (num_rows)
+178    select num_rows from user_tables where table_name = :1'
+179    using upper(p_table_name);
+180    analyze_table (l_table_stats_table_name);
+181  
+182    execute immediate 'delete from '||l_column_stats_table_name;
+183    execute immediate 'insert into '||l_column_stats_table_name||'
+184  	 (num_rows, density, num_distinct, max_ep, num_buckets, low_value, high_value)
+185    select (select num_rows from '||l_table_stats_table_name||'),
+186  	      density, num_distinct,
+187  	      (select max(ep) from '||l_hist_table_name||'),
+188  	      num_buckets, low_value, high_value
+189  	 from user_tab_columns where table_name = :1 and column_name = :2'
+190    using upper(p_table_name), upper(p_column_name);
+191    analyze_table (l_column_stats_table_name);
+192  
+193  end dump_table_stats;
+194  
+195  -----------------------------------------------------------
+196  procedure install_for_join
+197  is
+198  begin
+199    ------------------------- scalars
+200    execute immediate
+201  	 'create or replace view joh_scalars_xcols as
+202  	  select min(density) as min_density
+203  	    from (
+204  	  select density from joh_lhs_column_stats
+205  	   union all
+206  	  select density from joh_rhs_column_stats
+207  		 )';
+208  
+209    execute immediate
+210  	 'create or replace view joh_scalars_xMV as
+211  	  select min (joh_lhs_raw_hist.value) minMV, max (joh_lhs_raw_hist.value) maxMV
+212  	    from joh_lhs_raw_hist, joh_rhs_raw_hist
+213  	   where joh_lhs_raw_hist.value = joh_rhs_raw_hist.value';
+214  
+215    execute immediate
+216  	 'create or replace view joh_scalars_xHV as
+217  	  select min (minvalue) as minmin, max (minvalue) as maxmin,
+218  		 min (maxvalue) as minmax, max (maxvalue) as maxmax
+219  	    from (
+220  	  select max (value) as maxvalue, min (value) as minvalue from joh_lhs_raw_hist
+221  	   union all
+222  	  select max (value) as maxvalue, min (value) as minvalue from joh_rhs_raw_hist
+223  		 )';
+224  
+225    ------------------------- join histograms
+226    execute immediate
+227  	 'create or replace view joh_jh as
+228  	  with lhs_ as ( -- with subquery necessary for bug workaround
+229  	    select * from joh_lhs_hist
+230  	  ),   rhs_ as ( -- with subquery necessary for bug workaround
+231  	    select * from joh_rhs_hist
+232  	  )
+233  	  select nvl(lhs.value, rhs.value) as value,
+234  		 lhs.value	       as lhs_value,
+235  		 rhs.value	       as rhs_value,
+236  		 nvl(lhs.counts, 0)    as lhs_counts,
+237  		 nvl(rhs.counts, 0)    as rhs_counts,
+238  		 nvl(lhs.popularity,0) as lhs_popularity,
+239  		 nvl(rhs.popularity,0) as rhs_popularity,
+240  		 nvl(lhs.popularity,0) + nvl(rhs.popularity,0) as join_popularity
+241  	    from lhs_ lhs
+242  		 full outer join
+243  		 rhs_ rhs
+244  	      on lhs.value = rhs.value';
+245  
+246    execute immediate
+247  	 'create or replace view joh_cjh /* chopped join histogram */ as
+248  	  select joh_jh.*
+249  	    from joh_jh
+250  	   where value between join_over_histograms_improved.minMV -- lowest MATCHING value
+251  			   and join_over_histograms_improved.minmax -- lowest high value
+252  	 ';
+253  
+254    execute immediate
+255  	 'create or replace view joh_cjh_improved /* chopped join histogram ideal */ as
+256  	  select joh_jh.*
+257  	    from joh_jh
+258  	   where value between join_over_histograms_improved.maxmin -- highest low value
+259  			   and join_over_histograms_improved.minmax -- lowest high value
+260  	 ';
+261  
+262    execute immediate
+263  	 'create or replace view joh_cjh_plus_2 as
+264  	  with jh_numbered as (
+265  	   select jh.*, rownum jh_bucket_number
+266  	     from (
+267  	   select *
+268  	     from joh_jh
+269  	    order by value
+270  		  ) jh
+271  	  )
+272  	  select *
+273  	    from jh_numbered
+274  	   where value >= join_over_histograms_improved.minMV
+275  	     and jh_bucket_number <= 2 + (select jh_bucket_number
+276  					    from jh_numbered
+277  					    where value = join_over_histograms_improved.minmax
+278  					 )';
+279  
+280    execute immediate
+281  	 'create or replace view joh_scalars_maxPV as
+282  	  select max (value) as maxPV
+283  	    from joh_cjh
+284  	   where join_popularity >= 1';
+285  
+286  	------------------------- cardinality components
+287  	execute immediate
+288  	  'create or replace view joh_card_pop_2 as
+289  	   select nvl (sum (lhs_counts * rhs_counts), 0) as v
+290  	     from joh_cjh
+291  	    where join_popularity = 2';
+292  
+293  	execute immediate
+294  	  'create or replace view joh_card_pop_2_improved as
+295  	   select nvl (sum (lhs_counts * rhs_counts), 0) as v
+296  	     from joh_cjh_improved
+297  	    where join_popularity = 2';
+298  
+299  	execute immediate
+300  	  'create or replace view joh_card_pop_1 as
+301  	   select nvl (
+302  		     sum (decode (lhs_popularity, 1, lhs_counts, join_over_histograms_improved.lhs_num_rows_times_density)
+303  			  *
+304  			  decode (rhs_popularity, 1, rhs_counts, join_over_histograms_improved.rhs_num_rows_times_density)
+305  			 )
+306  		      , 0
+307  		   ) as v
+308  	     from joh_cjh
+309  	    where join_popularity = 1';
+310  
+311  	execute immediate
+312  	  'create or replace view joh_card_pop_1_improved as
+313  	   select nvl (
+314  		     sum (decode (lhs_popularity, 1, lhs_counts, join_over_histograms_improved.lhs_num_rows_times_density)
+315  			  *
+316  			  decode (rhs_popularity, 1, rhs_counts, join_over_histograms_improved.rhs_num_rows_times_density)
+317  			 )
+318  		      , 0
+319  		   ) as v
+320  	     from joh_cjh_improved
+321  	    where join_popularity = 1';
+322  
+323  	execute immediate
+324  	  'create or replace view joh_card_other as
+325  	   select decode (num_rows_unpop_lhs, 0, (select num_rows / max_ep from joh_lhs_column_stats), num_rows_unpop_lhs)
+326  		  *
+327  		  decode (num_rows_unpop_rhs, 0, (select num_rows / max_ep from joh_rhs_column_stats), num_rows_unpop_rhs)
+328  		  *
+329  		  join_over_histograms_improved.min_density
+330  		  as v
+331  	     from (
+332  	   select nvl( sum( decode (lhs_popularity, 1, 0, lhs_counts) ) , 0 ) as num_rows_unpop_lhs,
+333  		  nvl( sum( decode (rhs_popularity, 1, 0, rhs_counts) ) , 0 ) as num_rows_unpop_rhs
+334  	     from joh_cjh_plus_2
+335  	    where join_popularity < 2
+336  	      and value != join_over_histograms_improved.minMV -- confirmed
+337  		 )';
+338  
+339  	execute immediate
+340  	  'create or replace view joh_card_other_improved as
+341  	   select num_rows_unpop_def_lhs
+342  		  *
+343  		  num_rows_unpop_def_rhs
+344  		  *
+345  		  least ( (select (num_rows / num_rows_unpop_def_lhs) * density from joh_lhs_column_stats),
+346  			  (select (num_rows / num_rows_unpop_def_rhs) * density from joh_rhs_column_stats)
+347  			)
+348  		  as v_improved, -- improved version
+349  		  num_rows_unpop_def_lhs
+350  		  *
+351  		  num_rows_unpop_def_rhs
+352  		  *
+353  		  join_over_histograms_improved.min_density
+354  		  as v, -- version implemented by CBO.
+355  		  num_rows_unpop_def_lhs,
+356  		  num_rows_unpop_def_rhs
+357  	     from (
+358  	   select decode (num_rows_unpop_lhs, 0, (select num_rows / max_ep from joh_lhs_column_stats), num_rows_unpop_lhs) as num_rows_unpop_def_lhs,
+359  		  decode (num_rows_unpop_rhs, 0, (select num_rows / max_ep from joh_rhs_column_stats), num_rows_unpop_rhs) as num_rows_unpop_def_rhs
+360  	     from (
+361  	   select nvl( sum( decode (lhs_popularity, 1, 0, lhs_counts) ) , 0 ) as num_rows_unpop_lhs,
+362  		  nvl( sum( decode (rhs_popularity, 1, 0, rhs_counts) ) , 0 ) as num_rows_unpop_rhs
+363  	     from joh_cjh_improved
+364  	    where join_popularity < 2
+365  		  )
+366  		  )';
+367  
+368  	execute immediate
+369  	  'create or replace view joh_card_special as
+370  	   select case when join_over_histograms_improved.maxMV  - join_over_histograms_improved.minmax = 0
+371  			and join_over_histograms_improved.minmax - join_over_histograms_improved.maxmax < 0
+372  		       then decode ( (select lhs_value from joh_jh where value = join_over_histograms_improved.maxmax),
+373  				      null,
+374  				      -- lhs is the "shorter" table
+375  				      (select case when lhs_popularity = 1
+376  					      then lhs_counts * join_over_histograms_improved.rhs_num_rows_times_density
+377  					      else 0
+378  					      end
+379  					 from joh_jh where value = join_over_histograms_improved.minmax),
+380  				      -- rhs is the "shorter" table
+381  				      (select case when rhs_popularity = 1
+382  					      then rhs_counts * join_over_histograms_improved.lhs_num_rows_times_density
+383  					      else 0
+384  					      end
+385  					 from joh_jh where value = join_over_histograms_improved.minmax)
+386  				   )
+387  			else 0
+388  		  end as v
+389  	     from dual';
+390  
+391    dbms_output.put_line ('supporting objects installed for join');
+392  end install_for_join;
+393  
+394  -----------------------------------------------------------
+395  procedure install (
+396    p_lhs_table_name  varchar2,
+397    p_lhs_column_name varchar2,
+398    p_rhs_table_name  varchar2,
+399    p_rhs_column_name varchar2
+400  )
+401  is
+402  begin
+403    install_for_table (p_lhs_table_name, p_lhs_column_name, 'lhs');
+404    install_for_table (p_rhs_table_name, p_rhs_column_name, 'rhs');
+405    install_for_join;
+406  end install;
+407  
+408  -----------------------------------------------------------
+409  procedure set_scalars is
+410  begin
+411    execute immediate 'select min_density	from joh_scalars_xcols' into g_min_density;
+412    execute immediate 'select minMV, maxMV	from joh_scalars_xMV'	into g_minMV , g_maxMV;
+413    execute immediate 'select minmin, maxmin, minmax, maxmax from joh_scalars_xHV'
+414  	 into g_minmin, g_maxmin, g_minmax, g_maxmax;
+415    execute immediate 'select maxPV		from joh_scalars_maxPV' into g_maxPV;
+416    execute immediate 'select num_rows * density
+417  			  from joh_lhs_column_stats' into g_lhs_num_rows_times_density;
+418    execute immediate 'select num_rows * density
+419  			  from joh_rhs_column_stats' into g_rhs_num_rows_times_density;
+420  end set_scalars;
+421  
+422  -----------------------------------------------------------
+423  procedure set_simple_stats (s out t_simple_stats, p_lhr_rhs varchar2)
+424  is
+425    l_table_stats_table_name  varchar2(30) := 'joh_'||p_lhr_rhs||'_table_stats';
+426    l_column_stats_table_name varchar2(30) := 'joh_'||p_lhr_rhs||'_column_stats';
+427  begin
+428    execute immediate 'select num_rows from '||l_table_stats_table_name into s.num_rows;
+429    execute immediate 'select num_distinct, low_value, high_value, num_buckets from '||l_column_stats_table_name
+430  	 into s.num_distinct, s.low_value, s.high_value, s.num_buckets;
+431  end set_simple_stats;
+432  
+433  -----------------------------------------------------------
+434  function get_with_warn (
+435    p_lhs_table_name  varchar2,
+436    p_lhs_column_name varchar2,
+437    p_rhs_table_name  varchar2,
+438    p_rhs_column_name varchar2,
+439    p_warnings	 out varchar2,
+440    p_install_also	 varchar2 default 'Y',
+441    p_no_fallback	 varchar2 default 'Y',
+442    p_correct_notpop  varchar2 default 'Y'
+443  )
+444  return number
+445  is
+446    lhs_ss t_simple_stats;
+447    rhs_ss t_simple_stats;
+448    l_cbo_standard_8i number;
+449    l_cbo_standard_9i10g number;
+450    l_card_pop_2   number;
+451    l_card_pop_1   number;
+452    l_card_other   number;
+453    l_card_special number := 0;
+454    l_card_total   number;
+455  begin
+456    dbms_application_info.set_module ('JOH','JOH');
+457    if upper (p_install_also) = 'Y' then
+458  	 install (p_lhs_table_name, p_lhs_column_name, p_rhs_table_name, p_rhs_column_name);
+459    end if;
+460  
+461    dump_table_stats (p_lhs_table_name, p_lhs_column_name, 'lhs');
+462    dump_table_stats (p_rhs_table_name, p_rhs_column_name, 'rhs');
+463    commit;
+464    set_simple_stats (lhs_ss, 'lhs');
+465    set_simple_stats (rhs_ss, 'rhs');
+466    set_scalars;
+467  
+468    dbms_output.put_line ('minmin='||minmin||' maxmin='||maxmin||' minMV='||minMV||' maxMV='||maxMV||' minmax='||minmax||' maxmax='||maxmax||' maxPV='||maxPV);
+469  
+470    l_cbo_standard_8i  := cbo_standard (lhs_ss.num_rows, rhs_ss.num_rows, lhs_ss.num_distinct, rhs_ss.num_distinct,
+471  					   lhs_ss.low_value, lhs_ss.high_value, rhs_ss.low_value, rhs_ss.high_value, '8i');
+472    g_last_cbo_standard_8i := l_cbo_standard_8i;
+473  
+474    l_cbo_standard_9i10g := cbo_standard (lhs_ss.num_rows, rhs_ss.num_rows, lhs_ss.num_distinct, rhs_ss.num_distinct,
+475  					     lhs_ss.low_value, lhs_ss.high_value, rhs_ss.low_value, rhs_ss.high_value, '9i/10g');
+476    g_last_cbo_standard_9i10g := l_cbo_standard_9i10g;
+477  
+478    dbms_output.put_line ('standard formulae would be: 8i=' || round(l_cbo_standard_8i,1) || ' 9i10g=' || round(l_cbo_standard_9i10g,1));
+479  
+480    -- if histograms do not overlap at all => return 1
+481    if minmax < maxmin then
+482  	 dbms_output.put_line ('histograms do not overlap => return 1');
+483  	 return 1;
+484    end if;
+485  
+486    -- if any table has no histogram =>
+487    -- back to standard formula of 9i/10g (with no-overlap detector)
+488    /*
+489    if    (lhs_ss.num_buckets <= 1)
+490  	  or (rhs_ss.num_buckets <= 1)	then
+491  	 dbms_output.put_line ('one table with no histogram => back to standard formula of 9i/10g');
+492  	 return l_cbo_standard_9i10g;
+493    end if;
+494    */
+495  
+496    if p_no_fallback = 'N' then
+497  
+498  	 -- if any table has num_rows = num_distinct and no histogram =>
+499  	 -- back to standard formula of 9i/10g (with no-overlap detector)
+500  	 if    (lhs_ss.num_buckets <= 1 and (lhs_ss.num_rows = lhs_ss.num_distinct))
+501  	    or (rhs_ss.num_buckets <= 1 and (rhs_ss.num_rows = rhs_ss.num_distinct))  then
+502  	   dbms_output.put_line ('special case num_buckets <= 1 => back to standard formula of 9i/10g');
+503  	   return l_cbo_standard_9i10g;
+504  	 end if;
+505  
+506  	 -- if any table has num_rows <= 1 =>
+507  	 -- back to standard formula of 9i/10g (with no-overlap detector)
+508  	 if lhs_ss.num_rows <= 1 or rhs_ss.num_rows <= 1 then
+509  	   dbms_output.put_line ('special case num_rows <= 1 => back to standard formula of 9i/10g');
+510  	   return l_cbo_standard_9i10g;
+511  	 end if;
+512  
+513  	 -- if not exists a matching value less than a popular value =>
+514  	 -- back to standard formula of 8i (without no-overlap detector)
+515  	 if minMV is null or maxPV is null or minMV > maxPV then
+516  	   dbms_output.put_line ('back to standard formula of 8i');
+517  	   return l_cbo_standard_8i;
+518  	 end if;
+519  
+520    end if;
+521  
+522    -- calc formula contributions
+523    execute immediate 'select v from joh_card_pop_2_improved   ' into l_card_pop_2;
+524    execute immediate 'select v from joh_card_pop_1_improved   ' into l_card_pop_1;
+525  
+526    if p_correct_notpop = 'N' then
+527  	 execute immediate 'select v	      from joh_card_other_improved   ' into l_card_other;
+528    else
+529  	 execute immediate 'select v_improved from joh_card_other_improved   ' into l_card_other;
+530    end if;
+531  
+532    --execute immediate 'select v from joh_card_special' into l_card_special;
+533    l_card_total := l_card_pop_2 + l_card_pop_1 + l_card_other + l_card_special;
+534  
+535    dbms_output.put_line ('CARD_POP_2  = '|| to_char (l_card_pop_2  , '99999999.00'));
+536    dbms_output.put_line ('CARD_POP_1  = '|| to_char (l_card_pop_1  , '99999999.00'));
+537    dbms_output.put_line ('CARD_OTHER  = '|| to_char (l_card_other  , '99999999.00'));
+538    --dbms_output.put_line ('CARD_SPECIAL= '|| to_char (l_card_special, '99999999.00'));
+539    dbms_output.put_line ('------------------------');
+540    dbms_output.put_line ('TOTAL ------->'|| to_char (l_card_total, '99999999.00'));
+541  
+542    -- special case: if standard formula predicts zero cardinality =>
+543    -- back to standard formula of 8i (without no-overlap detector)
+544    if l_card_total < 0.001 then
+545  	 dbms_output.put_line ('predicted card = 0 => back to standard formula of 8i');
+546  	 return l_cbo_standard_8i;
+547    end if;
+548  
+549    return l_card_total;
+550  end get_with_warn;
+551  
+552  -----------------------------------------------------------
+553  function get (
+554    p_lhs_table_name  varchar2,
+555    p_lhs_column_name varchar2,
+556    p_rhs_table_name  varchar2,
+557    p_rhs_column_name varchar2,
+558    p_install_also	 varchar2 default 'Y',
+559    p_no_fallback	 varchar2 default 'Y',
+560    p_correct_notpop  varchar2 default 'Y'
+561  )
+562  return number
+563  is
+564    pragma autonomous_transaction;
+565    l_ret number;
+566    l_warn varchar2 (300 char);
+567  begin
+568    l_ret := get_with_warn (p_lhs_table_name, p_lhs_column_name,
+569  			       p_rhs_table_name, p_rhs_column_name, l_warn, p_install_also,
+570  			       p_no_fallback, p_correct_notpop);
+571    dbms_output.put_line (l_warn);
+572    return l_ret;
+573  end get;
+574  
+575  end join_over_histograms_improved;
+576  /
+
+Package body created.
+
+SQL> show errors;
+No errors.
+SQL> 
+SQL> -- installation sanity check
+SQL> 
+SQL> /*
+SQL> 
+SQL> purge recyclebin;
+SQL> 
+SQL> -- workaround for bug 4626732, 5752903 "ORA-07445 [ACCESS_VIOLATION] [_evaopn2+153]"
+SQL> alter session set "_optimizer_native_full_outer_join"=force;
+SQL> 
+SQL> -- install start
+SQL> 
+SQL> drop table lhs;
+SQL> drop table rhs;
+SQL> create table lhs (x number);
+SQL> create table rhs (x number);
+SQL> 
+SQL> -- install end
+SQL> 
+SQL> col actual_value form a20
+SQL> col  low_value   form a20
+SQL> col high_value   form a20
+SQL> col card new_value card
+SQL> col cbo_card new_value cbo_card
+SQL> set verify off
+SQL> set feedback off
+SQL> 
+SQL> define buckets = 75
+SQL> define t1off = 50
+SQL> 
+SQL> define t1j1 = 100
+SQL> define t2j1 = 100
+SQL> 
+SQL> execute dbms_random.seed(0)
+SQL> 
+SQL> insert into lhs (x)
+SQL> select &t1off + trunc(dbms_random.value(0, &t1j1 ))
+SQL> from dual connect by level <= 10000;
+SQL> 
+SQL> insert into rhs (x)
+SQL> select trunc(dbms_random.value(0, &t2j1 ))
+SQL> from dual connect by level <= 10000;
+SQL> 
+SQL> exec dbms_stats.gather_table_stats (user, 'lhs', method_opt =>'for all columns size &buckets.', estimate_percent => 100);
+SQL> exec dbms_stats.gather_table_stats (user, 'rhs', method_opt =>'for all columns size &buckets.', estimate_percent => 100);
+SQL> 
+SQL> select count(*) as real_cardinality
+SQL>   from lhs, rhs
+SQL>  where lhs.x = rhs.x;
+SQL> 
+SQL> select join_over_histograms_improved.get ('lhs', 'x', 'rhs', 'x') card,
+SQL> 	    cbo_cardinality.get ('lhs', 'x', 'rhs', 'x') cbo_card,
+SQL> 	    (join_over_histograms_improved.get ('lhs', 'x', 'rhs', 'x') -  cbo_cardinality.get ('lhs', 'x', 'rhs', 'x')) diff from dual;
+SQL> 
+SQL> select * from joh_lhs_column_stats;
+SQL> select * from joh_rhs_column_stats;
+SQL> --select * from joh_lhs_hist order by value;
+SQL> --select * from joh_rhs_hist order by value;
+SQL> select * from joh_jh order by value;
+SQL> select * from joh_card_other_improved;
+SQL> 
+SQL> */
+SQL> 
+SQL> spool off

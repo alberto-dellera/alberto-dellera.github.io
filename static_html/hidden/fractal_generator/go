@@ -1,0 +1,7 @@
+javac JFbm3DApplet.java
+x=$?
+if [ $x != 0 ]; then
+        echo "compilation failed! \$?=$x"
+else
+	appletviewer JFbm3DApplet.java
+fi

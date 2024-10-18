@@ -1,0 +1,94 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html><head><title>CBO: range predicate cardinality, conclusion</title>
+</head><body>
+<br><b>Conclusion</b>
+<br>
+<br>Starting from Jonathan Lewis' test case "Discrete Dangers" on page 126 of his book "<a href="http://www.jlcomp.demon.co.uk/cbo_book/ind_book.html#addenda">Cost Based Oracle</a>", 
+<br>we have investigated (and illustrated with graphs) the CBO cardinality estimation algorithm for range-based predicates:
+<pre>
+  select x from t where x >  low_x and x <  high_x  (open  , open  )
+  select x from t where x >= low_x and x <= high_x  (closed, closed)
+  select x from t where x >  low_x and x <= high_x  (open,   closed)
+  select x from t where x >= low_x and x <  high_x  (closed, open)
+
+  template:
+  select x from t where x #low low_x and x #high high_x
+  #low  in (">", ">=")
+  #high in ("<", "<=")
+</pre>
+when column x has no associated histogram.
+<br>
+<br>Letting 
+<pre>
+  min_x = min (x) over all rows
+  max_x = max (x) over all rows
+  B = (max_x - min_x) / num_distinct (Band width)
+</pre> 
+and defining
+<pre>
+  left band      : min_x     < x < min_x + B
+  central region : min_x + B < x < max_x - B
+  right band     : max_x - B < x < max_x
+</pre>
+
+we have seen that
+
+<ul>
+<li> For ranges <b><u>completely</u> contained in one of the two bands</b>
+<pre>
+     min_x     <= low_x < high_x <= min_x + B
+  or max_x - B <= low_x < high_x <= max_x
+</pre>
+the cardinality can depend on both low_x and high_x, only low_x, only high_x, or none (= constant), depending on the value of #low and #high, in a somewhat counterintuitive way. We have found the relevant formulae.
+<li> In <b>all the other cases</b>, a slightly modified (modifications underlined) version of Jonathan Lewis' "standard formula" applies:
+<pre>
+  cardinality = num_rows * (<u>high_x_effective</u> - <u>low_x_effective</u>) / (max_x - min_x)
+              + num_rows * correction_for_or_equal_operators
+              <u>- num_rows * correction_for_special_case</u>
+
+  if #low = ">=" <b>and</b> low_x inside the left band then 
+    low_x_effective = min_x + B
+  else
+    low_x_effective = low_x
+  end
+
+  if #high = "<=" <b>and</b> high_x inside the right band
+    high_x_effective = max_x - B
+  else
+    high_x_effective = high_x
+  end
+
+  correction_for_or_equal_operators = 0
+    + 1/num_distinct if #low  = ">="
+    + 1/num_distinct if #high = "<="
+
+  correction_for_special_case = 0 
+    + 1/num_distinct if low_x  = min_x <b>and</b> #low  = ">"    
+    + 1/num_distinct if high_x = max_x <b>and</b> #high = "<"  
+</pre>
+  This <a href="range_sel_formula_check.sql">fitness test</a> verifies the formula against the CBO, using its <a href="range_sel_formula.sql">pl/sql implementation</a>. 
+</ul> 
+We have also graphically illustrated, hopefully for a better intuitive understanding, the case of selection over both an infinitesimal and a finite range for the (open,open) and (closed, closed) cases.
+<br>
+<br>The discussion starts <a href="range_sel_index.html">here</a>.
+<br>
+<br> And here's my <a href="range_sel_speculation.html">speculation</a> about the rationale behind this strange (but quite sound in hindsight) behaviour.
+
+<br><br>
+<i>For corrections / feedback:<br>
+alberto.dellera@gmail.com</i>
+<br><br>
+
+<!-- Start of StatCounter Code -->
+<script type="text/javascript" language="javascript">
+var sc_project=2420231; 
+var sc_invisible=1; 
+var sc_partition=23; 
+var sc_security="d66786aa"; 
+var sc_text=2; 
+</script>
+
+<script type="text/javascript" language="javascript" src="http://www.statcounter.com/counter/counter.js"></script><noscript><a href="http://www.statcounter.com/" target="_blank"><img  src="http://c24.statcounter.com/counter.php?sc_project=2420231&java=0&security=d66786aa&invisible=0" alt="site stats" border="0"></a> </noscript>
+<!-- End of StatCounter Code -->
+
+</body></html>

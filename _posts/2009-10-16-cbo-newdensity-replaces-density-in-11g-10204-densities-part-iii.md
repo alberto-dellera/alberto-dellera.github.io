@@ -104,7 +104,7 @@ It might be desirable that one day, NewDensity gets calculated exactly by dbms\_
 
 **TBD: clone the investigations: http://www.adellera.it/static_html/investigations/ **
 
-[test link](investigations/test)
+[test link](/investigations/test)
 
 For a summary of the above discussion and some more discussion, check back [this investigation](http://www.adellera.it/investigations/11g_newdensity/index.html) of mine. By the way, NewDensity replaces "density" also in join cardinality formulae, even if I have not run a complete investigation - but that is not surprising at all.
 

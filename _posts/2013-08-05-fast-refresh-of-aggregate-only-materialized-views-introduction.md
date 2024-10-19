@@ -14,7 +14,7 @@ meta:
 author: Alberto Dell'Era
 permalink: "/blog/2013/08/05/fast-refresh-of-aggregate-only-materialized-views-introduction/"
 migration_from_wordpress:
-  approved_on: 20241012 BUT CHECK 2009 LINKS 
+  approved_on: 20241012 
 ---
 This post introduces a series about the algorithm used by Oracle (in 11.2.0.3) to fast refresh a materialized view (MV) containing only an aggregate:
 

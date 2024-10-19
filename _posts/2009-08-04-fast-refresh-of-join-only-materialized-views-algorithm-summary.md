@@ -18,7 +18,7 @@ migration_from_wordpress:
 ---
 This post investigates how Oracle fast refreshes materialized views containing only joins of master tables:  
 ```plsql 
-create materialized view test\_mv  
+create materialized view test_mv  
 build immediate  
 refresh fast on demand  
 as  
@@ -122,12 +122,14 @@ where jv.j1_2 = mas2.j2_1
 ``` 
 The subquery is the same as the DEL step and serves the very same function. So, this statement replays the SQL statement of the MV definition, but limited to the marked rows only. Note that all tables are read at the same point in time in the past, the time when the snapshot of the log was performed, thanks to the argument of the "as of snapshot" clause being the same.
 
-In order to speed up the INS step, indexes on the joined columns can be created on the master tables (not on the MV!). This is because, special cases aside, it is well known that the "fast refresh" (the name itself is quite horrible, many people prefer the adjective "incremental") can be actually "fast" only if a small fraction of the master tables is modified (otherwise, a complete refresh is better); in this scenario, almost certainly the optimal plan is a series of NESTED LOOPs that has the current table (test\_t1 in this case) as the most outer table, series that can usually benefit a lot by an index on the inner tables join columns. Of course, you must remember that every table, in turn, acts as the most outer table, hence you should index every possible join permutation.
+In order to speed up the INS step, indexes on the joined columns can be created on the master tables (not on the MV!). 
+This is because, special cases aside, it is well known that the "fast refresh"  can be actually "fast" only if a small fraction of the master tables is modified; otherwise, a complete refresh is better (in passing: the adjective "fast" itself is quite horrible, many people prefer the adjective "incremental"). 
+In this scenario, almost certainly the optimal plan is a series of NESTED LOOPs that has the current table (test\_t1 in this case) as the most outer table, series that can usually benefit a lot by an index on the inner tables join columns. Of course, you must remember that every table, in turn, acts as the most outer table, hence you should index every possible join permutation.
 
-So here what the algorithm is all about: the DEL and INS steps, together, simply delete and recreate the "slice" of the MV that is referenced by the marked rows, whatever the modification type. The algorithm is as simple (and brutal) as it seems.
+So here what the algorithm is all about: the DEL and INS steps, together, simply ** delete and recreate the "slice" of the MV that is referenced by the marked rows**, whatever the modification type. The algorithm is as simple (and brutal) as it seems.
 
 ### Algorithm optimizations
 
 The only optimizations performed are the skipping of some steps when they are obviously unnecessary. For every master table, the DEL step is skipped when only INSERTs are marked in the logs; the INS is skipped when only DELETEs are marked, and of course both are skipped if no row is marked. I have not been able to spot any other optimization.
 
-Note that this means that UPDATEs always turn into a delete+insert of the entire "slice". For example, consider the typical case of a parent table (say, CUSTOMER), with a child (say, ORDER) and a grandchild (say, ORDER\_LINE); if you update a column of a row of the parent (say, ORDERS\_TOTAL\_AMOUNT), the parent row and its whole progeny (the "slice") will be deleted and then recreated. This was a quite surprising discovery for me - a fact that I have now committed to memory.
+Note that this means that UPDATEs always turn into a delete+insert of the entire "slice". For example, consider the typical case of a parent table (say, CUSTOMER), with a child (say, ORDER) and a grandchild (say, ORDER\_LINE); if you update a column of a row of the parent (say, ORDERS\_TOTAL\_AMOUNT), the parent row and its whole progeny (the "slice") will be deleted and then recreated. This was a quite surprising discovery for me - a fact that I have now committed to memory as a fact to check first when investigating performance issues.

@@ -21,10 +21,11 @@ Let's explore the concept of cardinality from the point of view of the statistic
 Let's consider a statement with input parameters (bind variables), and consider the most fundamental of them all, the one with a filter predicate:  
 ```plsql 
 select ...  
- from t  
+  from t  
  where x = :x;  
 ``` 
 the cardinality "card" of the set of rows retrieved depends on the table possible values and the actual inputs provided by the client as bind variable values. What about the expected value E\[card\] ?  
+
 Let:  
 1) w(:x) ("w" stands for "workload") the probability mass function of the random variable :x (that completely characterizes the workload);  
 2) E\[count(:x)\] the expected value of the cardinality of the rows retrieved for each value of :x.
@@ -32,7 +33,7 @@ Let:
 We have, assuming that the two are independent:  
 ``` 
 E[card] = sum ( w(:x) * E[count(:x)] )  
-         for all values of :x  
+          for all values of :x  
 ```
 
 To solve the formula we have to know (or assume) the client-dictated w(:x). The same goes for the table [potential population](http://en.wikipedia.org/wiki/Statistical_population) (that -together with the statement of course- shapes E\[count(:x)\]); we must either have some statistical measurements about the table (for example, a frequency histogram on column X that we consider representative of the table population) or assume them (for example, assume a certain distribution for the column X values).

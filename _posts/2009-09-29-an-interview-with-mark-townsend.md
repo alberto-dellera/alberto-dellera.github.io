@@ -13,7 +13,7 @@ meta:
 author: Alberto Dell'Era
 permalink: "/blog/2009/09/29/an-interview-with-mark-townsend/"
 migration_from_wordpress:
-  approved_on: working
+  approved_on: 20241019
 ---
 While attending the *11gR2 launch event* in Milan last Thursday, I had the distinguished opportunity (invited, as a blogger, by the Oracle team that was organizing the event) to meet [Mark Townsend](https://www.oracle.com/partners/campaign/ace-newsletter-apr2012-1605004.pdf) and exchange a few words about the new features of 11gR2 and the Oracle database in general as well.
 

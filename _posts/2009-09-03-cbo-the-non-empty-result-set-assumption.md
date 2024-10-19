@@ -15,7 +15,7 @@ meta: {}
 author: Alberto Dell'Era
 permalink: "/blog/2009/09/03/cbo-the-non-empty-result-set-assumption/"
 migration_from_wordpress:
-  approved_on: working
+  approved_on: 20241019
 ---
 The CBO assumes that SELECT statements are always going to retrieve at least one row - even if this is not necessarily the case, of course. Understanding _why_ this is done is both useful and fascinating.
 
@@ -37,7 +37,7 @@ If a frequency histogram has been collected on column X, the population is const
 
 But if no histogram is collected on the column, the number of tables with X=1 will be negligible, and hence the expected value will be zero. That is not very useful.
 
-But if we assume that the **result set is never empty** , then we have another constraint to apply. That means that the value X is contained in all tables of the population, and (if we add the additional customary assumption of uniform distribution of values) we can easily derive the usual num\_rows / num\_distinct(X) formula.
+But if we assume that the **result set is never empty**, then we have another constraint to apply. That means that the value X is contained in all tables of the population, and (if we add the additional customary assumption of uniform distribution of values) we can easily derive the usual num\_rows / num\_distinct(X) formula.
 
 Note that the "non-empty result set" assumption is very strong; it means that the statement and the table are not independent, but actually are highly correlated, since the assumption is equivalent to say that the client executes the statement in order to retrieve rows whose existence is certain before the statement execution. In other words, the CBO infers information about the data from the statement itself, not only from the data dictionary statistics, trusting that the user has some knowledge about the data stored in the table.
 

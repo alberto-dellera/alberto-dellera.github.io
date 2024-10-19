@@ -122,11 +122,13 @@ where jv.j1_2 = mas2.j2_1
 ``` 
 The subquery is the same as the DEL step and serves the very same function. So, this statement replays the SQL statement of the MV definition, but limited to the marked rows only. Note that all tables are read at the same point in time in the past, the time when the snapshot of the log was performed, thanks to the argument of the "as of snapshot" clause being the same.
 
-In order to speed up the INS step, indexes on the joined columns can be created on the master tables (not on the MV!). 
-This is because, special cases aside, it is well known that the "fast refresh"  can be actually "fast" only if a small fraction of the master tables is modified; otherwise, a complete refresh is better (in passing: the adjective "fast" itself is quite horrible, many people prefer the adjective "incremental"). 
+In order to speed up the INS step, indexes on the joined columns can be created on the master tables (not on the MV!).
+
+This is because, special cases aside, it is well known that the "fast refresh" can be actually "fast" only if a small fraction of the master tables is modified; otherwise, a complete refresh is better (in passing: the adjective "fast" itself is quite horrible, many people do prefer the adjective "incremental"). 
+
 In this scenario, almost certainly the optimal plan is a series of NESTED LOOPs that has the current table (test\_t1 in this case) as the most outer table, series that can usually benefit a lot by an index on the inner tables join columns. Of course, you must remember that every table, in turn, acts as the most outer table, hence you should index every possible join permutation.
 
-So here what the algorithm is all about: the DEL and INS steps, together, simply ** delete and recreate the "slice" of the MV that is referenced by the marked rows**, whatever the modification type. The algorithm is as simple (and brutal) as it seems.
+So here what the algorithm is all about: the DEL and INS steps, together, simply **delete and recreate the "slice" of the MV that is referenced by the marked rows**, whatever the modification type. The algorithm is as simple (and brutal) as it seems.
 
 ### Algorithm optimizations
 

@@ -69,7 +69,7 @@ row#6[7972] flag: ------, lock: 2, len=16
   col 1; len 6; (6):  01 00 1c 74 00 03
 row#7[8004] flag: ------, lock: 2, len=16
   col 0; len 6; (6):  37 37 37 37 37 37    { '777777' }
- col 1; len 6; (6):  01 00 1c 74 00 01
+  col 1; len 6; (6):  01 00 1c 74 00 01
 ----- end of leaf block dump -----
 ...  
 ```  
@@ -107,4 +107,4 @@ It is also worth remembering that this way, only a portion of the block is acces
 
 Of course there's a price to be paid for modifications, since each modification has to keep the row directory ordered, thus shifting the slots of the row directory, which is a relatively expensive operation. Oracle pays an higher bill at modification time to save (hugely) at read time.
 
-As a final observation: note that the branch block visit can be considered a binary search as well, "pre-calculated" by the B+tree structure - the ordering inside a block is just the same divide-and-conquer algorithm applied in a different way.
+As a final observation: note that the branch block visit is a generalization of the binary search (actually named binary+) as well, "pre-calculated" by the B+tree structure - the ordering inside a block is just the same divide-and-conquer algorithm applied in a different way.

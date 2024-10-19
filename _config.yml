@@ -16,8 +16,7 @@
 title: "Alberto Dell'Era's blog"
 email: alberto.dellera@gmail.com
 description: >- # this means to ignore newlines until "baseurl:"
-  In short: 20+ years of real, full-time experience with Oracle Database - ranging from small systems to RAC / Exadata, on both OLTP and DWH / BI environments. 
-  I usually play the roles of Performance Tuner or core-modules Developer 
+  This is my ole good blog, mostly on Oracle. Kept because I’m attached to it and because it still contains relevant information 
 baseurl: "" # the subpath of your site, e.g. /blog
 url: "" # the base hostname & protocol for your site, e.g. http://example.com
 twitter_username: alberto_dellera

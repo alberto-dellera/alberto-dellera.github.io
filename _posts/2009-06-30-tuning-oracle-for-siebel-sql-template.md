@@ -15,13 +15,13 @@ meta:
 author: Alberto Dell'Era
 permalink: "/blog/2009/06/30/tuning-oracle-for-siebel-sql-template/"
 migration_from_wordpress:
-  approved_on: working
+  approved_on: 20241019
 ---
 The time has come to write down some of the most relevant discoveries I've made so far while being part of a team that is tuning a huge Siebel installation for a leading Italian company ("huge" especially because of the user base dimension and secondarily because of the hardware deployed, a three-node RAC on pretty powerful SMP machines).
 
 This blog entry is about the structure of the Siebel queries and the effect of the settings of some CBO-related parameters - settings made by the Siebel clients by altering the session at connect time, or required as mandatory in the Siebel installation notes. Other postings may follow in case I discover something worth writing about.
 
-But first of all, let me thank for their support all the fellow members of the *OakTable network* (especially [Tim Gorman](http://www.evdbt.com/) that has exchanged long emails with me) and *Andy Cowling* (introduced to me by [Doug Burns](http://www.oracledoug.com/serendipity)) that kindly provided me with a lot of detailed information coming from their vast hands-on experience with Siebel on Oracle.
+But first of all, let me thank for their support all the fellow members of the *OakTable Network* (especially [Tim Gorman](http://www.evdbt.com/) that has exchanged long emails with me) and *Andy Cowling* (introduced to me by [Doug Burns](http://www.oracledoug.com/serendipity)) that kindly provided me with a lot of detailed information coming from their vast hands-on experience with Siebel on Oracle.
 
 For the record, the environment is Siebel 8.0, using a three-node 10.2.0.4 RAC cluster on identical SMP machines with 16 CPUs each.
 

@@ -92,7 +92,7 @@ which is, not surprising, the standard formula used for columns without histogra
 
 One possibility for producing the above E\[card\] value at run-time could have been to change dbms\_stats to compute a value for "density" equal to "(num\_rows\_nps / num\_distinct\_nps) / num\_rows"; but forcing users to recompute statistics for all their tables in their upgraded databases is not really a viable option. 
 
-Hence, the CBO designers chose to simply ignore "density" and calculate the above formula at run-time, mining the histogram, at the cost of reduced precision. In fact, the easy part is num\_distinct\_nps, which is obviously exactly equal to num\_distinct minus the number of popular values; but num\_rows\_nps can only calculated approximately, since the histogram is a (deterministic) sample of the column values obtained by first sorting the column values and then sampling on a uniform grid (for more information and illustration, see the first part of [this article of mine](/assets/files/2007/04/JoinCardinalityEstimationWithHistogramsExplained.pdf)). Using the histogram, the best approximation for num\_rows\_nps is num\_rows times the fraction of buckets not covered by popular values. Hence, using the 10053 terminology  
+Hence, the CBO designers chose to simply ignore "density" and calculate the above formula at run-time, mining the histogram, at the cost of reduced precision. In fact, the easy part is num\_distinct\_nps, which is obviously exactly equal to num\_distinct minus the number of popular values; but num\_rows\_nps can only calculated approximately, since the histogram is a (deterministic) sample of the column values obtained by first sorting the column values and then sampling on a uniform grid (for more information and illustration, see the first part of [this article of mine](/static_html/investigations/join_over_histograms/JoinCardinalityEstimationWithHistogramsExplained.pdf)). Using the histogram, the best approximation for num\_rows\_nps is num\_rows times the fraction of buckets not covered by popular values. Hence, using the 10053 terminology  
 ```  
 num_distinct_nps = NDV - PopValCnt (exactly)
 
@@ -102,11 +102,7 @@ which gets back (again, approximately) the E\[card\] formula above, as can be tr
 
 It might be desirable that one day, NewDensity gets calculated exactly by dbms\_stats and stored in the data dictionary, at least for columns with new statistics, albeit the precision reduction is probably more than acceptable (that is, I have never seen a case where that has been an issue). The test case script, just for the sake of completeness, calculates the exact figure as well; it gets back an E\[card\] of 6.2 instead of 3.8.
 
-**TBD: clone the investigations: http://www.adellera.it/static_html/investigations/ **
-
-[test link](/investigations/test)
-
-For a summary of the above discussion and some more discussion, check back [this investigation](http://www.adellera.it/investigations/11g_newdensity/index.html) of mine. By the way, NewDensity replaces "density" also in join cardinality formulae, even if I have not run a complete investigation - but that is not surprising at all.
+For a summary of the above discussion and some more discussion, check [this investigation](/static_html/investigations/11g_newdensity/index.html) of mine. By the way, NewDensity replaces "density" also in join cardinality formulae, even if I have not run a complete investigation - but that is not surprising at all.
 
 As a final nore - NewDensity is used also for Frequency Histograms, and in a very creative way; we will discuss this in part IV of this series.
 

@@ -16,18 +16,11 @@
 title: "Alberto Dell'Era's blog"
 email: alberto.dellera@gmail.com
 description: >- # this means to ignore newlines until "baseurl:"
-  I’ve spent all my professional life working within the Italian Telecommunications sector since 1996, 
-  specializing in the Oracle database full-time since 1999. I currently work for a big (2600+ employees) consultancy firm 
-  as an Oracle specialist, very often optimizing customers’ systems (“Performance Tuning”), and developing for the flagship 
-  customer Web portal of one of the largest Italian mobile operators. 
-  
-  I also hold a Math-oriented degree in Electronics Engineering from the “Politecnico di Milano” University.
-
-  I am honoured of being a member of OakTable Network, the famous organization of Oracle professionals distinguished by the use 
-  of the Scientific Method (and related ethics) for all their activities.
+  In short: 20+ years of real, full-time experience with Oracle Database - ranging from small systems to RAC / Exadata, on both OLTP and DWH / BI environments. 
+  I usually play the roles of Performance Tuner or core-modules Developer 
 baseurl: "" # the subpath of your site, e.g. /blog
 url: "" # the base hostname & protocol for your site, e.g. http://example.com
-twitter_username: jekyllrb
+twitter_username: alberto_dellera
 github_username:  alberto-dellera
 linkedin_username: adellera
 

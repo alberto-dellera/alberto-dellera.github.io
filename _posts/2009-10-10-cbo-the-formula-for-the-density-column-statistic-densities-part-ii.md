@@ -20,7 +20,7 @@ In this post we are going to explore and explain the rationale for the formula u
 
 We will consider only the non-trivial case of Height-Balanced histograms, since for Frequency Histograms density is a constant (0.5 / num_rows) and for columns without histogram, it is simply 1/num_distinct.
 
-Let's illustrate the test case on which we will base our discussion, contained in [this zip] (/assets/files/2009/10/density_post.zip) file. 
+Let's illustrate the test case on which we will base our discussion, contained in [this zip](/assets/files/2009/10/density_post.zip) file. 
 
 First, a table T is created with the following exponential value distribution:
 ```plsql
@@ -59,16 +59,17 @@ select ...
  where value = 2.4;  
 ```
 
-The literal value 2.4 is not contained in the table (and hence in the histogram), in order to make the CBO factor in "density" in its estimate of the expected cardinality - in fact, as it might be known, density is used when the literal is not popular (that is, not equal to 64 in our case), and it doesn't matter whether the literal is not contained in the histogram, or contained as an unpopular value (1 and 16 in our case), or even contained in the table or not. All it takes is its being not popular.  
+The literal value 2.4 is not contained in the table (and hence in the histogram), in order to make the CBO factor in "density" in its estimate of the expected cardinality - in fact, as it might be known, density is used when the literal is not popular (that is, not equal to 64 in our case), and it doesn't matter whether the literal is not contained in the histogram, or contained as an unpopular value (1 and 16 in our case), or even contained in the table or not. All it takes is its being not popular. 
+
 Side note: I'm assuming the literal is inside the closed min-max interval (1-64 in this case); when outside, it depends on the version.
 
 When the literal is not popular, the formula used for the expected cardinality calculation is equal to  
 ```
-E[card] = density * num_rows;  
+E[card] = density * num_rows  
 ```  
 That is easy to verify from the test case logs; in 9i we can see that density = 0.115789474 and num\_rows=95, hence 0.115789474 \* 95 = 11.000000000 which is exactly equal to the CBO estimate for our statement.
 
-The formula used by dbms\_stats to compute "density" was published in Jonathan Lewis' book [Cost Based Oracle](http://www.jlcomp.demon.co.uk/cbo_book/ind_book.html) (page 172) and Wolfgang Breitling's presentation [Histograms - Myths and Facts](http://www.centrexcc.com/). The key fact is that the formula takes as input the rows of what I've nicknamed the not-popular subtable (NPS), that is, the original table without the rows whose values are popular values (in this case, 64 is the only popular value). Letting num\_rows\_nps the number of rows of the NPS (for our example, num\_rows\_nps=1+2+4+8+16=31), we have:  
+The formula used by dbms\_stats to compute "density" was published in Jonathan Lewis' book [Cost Based Oracle](https://www.goodreads.com/book/show/185466.Cost_Based_Oracle_Fundamentals) (page 172) and Wolfgang Breitling's presentation [Histograms - Myths and Facts](http://www.centrexcc.com/). The key fact is that the formula takes as input the rows of what I've nicknamed the not-popular subtable (NPS), that is, the original table without the rows whose values are popular values (in this case, 64 is the only popular value). Letting num\_rows\_nps the number of rows of the NPS (for our example, num\_rows\_nps=1+2+4+8+16=31), we have:  
 ``` 
  density = (1 / num_rows) *  
            sum (count (value) ^ 2) / num_rows_nps  
@@ -83,22 +84,21 @@ What is the statistical rationale for this seemingly strange computation?
 If we plug it inside the formula for E\[card\], we can see that num\_rows is cancelled:  
 ```  
 E[card] = sum (count (value) ^ 2) / num_rows_nps  
-summed over all "values" belonging to the NPS  
+          summed over all "values" belonging to the NPS  
 ```
-
 Now we must reference the statistical concepts introduced in [this post](/blog/2009/10/03/cbo-about-the-statistical-definition-of-cardinality-densities-part-i/), and consider the family of all statements of our kind that can reference the NPS:  
 ```plsql  
 select ...  
   from t  
  where x = :x;  
-  :x being a value belonging to the NPS  
+      :x being a value belonging to the NPS  
 ```
 its E\[card\] is  
 ```  
 E[card] = sum ( w(:x) * E[count(:x)] )  
           for all values of :x (belonging to the NPS)  
 ```  
-dbms\_stats takes count(:x) as the best estimate for E\[count(:x)\] (for example, E\[count(4)\] = count(4) = 4 in our case). All we have to do in order to obtain the observed formula, is to assume w(:x) = count(:x) / num\_rows\_nps:  
+dbms\_stats takes count(:x) as the best estimate for E\[count(:x)\] (for example, E\[count(4)\] = count(4) = 4 in our case). All we have to do in order to obtain the observed formula, is to assume "w(:x) = count(:x) / num\_rows\_nps":  
 ```  
 E[card] = sum ( (count(:x) / num_rows_nps) * count(:x) )  
         = sum ( count(:x) ^ 2 ) / num_rows_nps  

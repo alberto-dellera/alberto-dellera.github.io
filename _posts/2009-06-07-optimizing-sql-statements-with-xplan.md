@@ -14,6 +14,8 @@ tags: []
 meta:
 author: Alberto Dell'Era
 permalink: "/blog/2009/06/07/optimizing-sql-statements-with-xplan/"
+migration_from_wordpress:
+  approved_on: 20241019
 ---
 [Xplan](https://github.com/alberto-dellera/xplan) is a utility to simplify and automate the first part of every SQL statement tuning effort, that is, collecting the real plan of the statement, its execution statistics (number of executions, number of buffer gets performed, etc), getting the definition of all the accessed tables (and their indexes), and, last but not least, the CBO-related statistics of the accessed tables (and their indexes and columns) stored in the data dictionary by dbms_stats or ANALYZE.
 
@@ -53,4 +55,4 @@ SQL>@xplan "" "hash=3280933266"
 ```
 Some further customizations are possible - for example, you can order the matching statements (technically, the matching child cursors in the shared sql area) by elapsed\_time, buffer\_gets, etc; you can get a different output file for each hash\_value, instead of a single output file; you can suppress or enable certain sections of the report; and so on. For the full list and further details, please check the xplan.sql header.
 
-Xplan is free to download and use. If you decide to try it - for any question, comment or feature request, feel free to send an email to me.
+Xplan is free to download and use. If you decide to try it - for any question, comment or feature request, please feel free to send an email to me.

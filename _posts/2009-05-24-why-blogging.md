@@ -13,7 +13,7 @@ meta: {}
 author: Alberto Dell'Era
 permalink: "/blog/2009/05/24/why-blogging/"
 migration_from_wordpress:
-  approved_on: working
+  approved_on: 20241019
 ---
 Mainly because I like to write, and people usually like my writings. So, why not ?
 

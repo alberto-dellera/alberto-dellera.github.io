@@ -13,7 +13,7 @@ meta:
 author: Alberto Dell'Era
 permalink: "/blog/2009/08/24/nocougs-first-international-sql-challenge/"
 migration_from_wordpress:
-  approved_on: working
+  approved_on: 20241019
 ---
 Just a short note to tell my friends that I have been bestowed the _August Order of the Wooden Pretzel_, that is, that I won the NoCOUG's "First international SQL challenge" with [this solution](/static_html/investigations/nocoug_challenge/index.html).
 

@@ -14,7 +14,7 @@ meta: {}
 author: Alberto Dell'Era
 permalink: "/blog/2009/08/04/fast-refresh-of-join-only-materialized-views-algorithm-summary/"
 migration_from_wordpress:
-  approved_on: working
+  approved_on: 20241019
 ---
 This post investigates how Oracle fast refreshes materialized views containing only joins of master tables:  
 ```plsql 

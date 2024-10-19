@@ -32,6 +32,7 @@ kramdown:
   syntax_highlighter: rouge
   extensions: fenced_code_blocks
 theme: minima
+  show_excerpts: true
 plugins:
   - jekyll-feed
 

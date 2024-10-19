@@ -16,7 +16,7 @@ permalink: "/blog/2009/07/23/bind-variables-checker-for-oracle-now-install-free/
 migration_from_wordpress:
   approved_on: working
 ---
-I've finally managed to implement an install-free version of my utility to check for bind variables usage. The new script is named bvc_check.sql and when run, it examines the SQL statements stored in the library cache (through gv$sql) and dumps the ones that would be the same if the literals were replaced by bind variables. 
+I've finally managed to implement an install-free version of my utility to check for bind variables usage. The new script is named bvc_check.sql and when run, it examines the SQL statements stored in the library cache (through gv\$sql) and dumps the ones that would be the same if the literals were replaced by bind variables. 
 
 An example of the output:
 ```

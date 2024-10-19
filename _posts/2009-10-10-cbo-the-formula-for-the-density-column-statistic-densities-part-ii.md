@@ -14,7 +14,7 @@ meta: {}
 author: Alberto Dell'Era
 permalink: "/blog/2009/10/10/cbo-the-formula-for-the-density-column-statistic-densities-part-ii/"
 migration_from_wordpress:
-  approved_on: working
+  approved_on: 20241019
 ---
 In this post we are going to explore and explain the rationale for the formula used by dbms_stats to compute the "density" column statistic, used by the CBO in versions less than 10.2.0.4 to estimate the cardinality of a class of SQL statements. In the next post, we will speak about its replacement, named "NewDensity" in 10053 trace files.
 

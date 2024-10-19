@@ -14,7 +14,7 @@ meta: {}
 author: Alberto Dell'Era
 permalink: "/blog/2009/05/24/order-keys-inside-index-blocks/"
 migration_from_wordpress:
-  approved_on: working
+  approved_on: 20241019
 ---
 In this post we are going to illustrate how index keys are ordered inside a leaf block of an Oracle B+tree index.
 

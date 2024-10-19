@@ -28,9 +28,9 @@ select test_t1.*, x1+x2 as x1x2
  from test_t1  
  where x1 != 0.42;  
 ```  
-This kind of MVs might be considered a degenerate case of a join-only MV, a topic that we investigated on an earlier [post](/blog/2009/08/04/fast-refresh-of-join-only-materialized-views-algorithm-summary/), and one could expect the same algorithm. But that is not the case: the [test case](/assets/file/2009/08/post_0050_single_table_mv.zip) shows that the algorithm used is very different.  
+This kind of MVs might be considered a degenerate case of a join-only MV, a topic that we investigated on an earlier [post](/blog/2009/08/04/fast-refresh-of-join-only-materialized-views-algorithm-summary/), and one could expect the same algorithm. But that is not the case: the [test case](/assets/files/2009/08/post_0050_single_table_mv.zip) shows that the algorithm used is very different.  
 
-The two main differences are (as we are going to illustrate in detail) that UPDATEs are actually used in this case (as [noted](/blog/2009/08/04/fast-refresh-of-join-only-materialized-views-algorithm-summary/#comments) by [Cristian Cudizio](http://cristiancudizio.wordpress.com/ )) instead of DELETE+INSERT only, and especially that row-by-row propagation is performed instead of using a couple of single SQL statements.
+The two main differences are (as we are going to illustrate in detail) that UPDATEs are actually used in this case (as noted by [Cristian Cudizio](http://cristiancudizio.wordpress.com/) in a now-lost comment when this blog was hosted in a different platform) instead of DELETE+INSERT only, and especially that row-by-row propagation is performed instead of using a couple of single SQL statements.
 
 This kind of MV is frequently used for replication across a db-link (with a clause such as "from test\_t1@db\_link"); in this scenario, the MV used to be named SNAPSHOT in old releases. I have checked this scenario as well (not included in the test case) and the only difference is that, obviously, the master table test\_t1 is referenced via a db-link and a few hints are injected by the refreshing engine.
 
@@ -57,7 +57,7 @@ create materialized view log on test_t1 with primary key;
 
 ## Log snapshots
 
-The first step in the refresh algorithm is to take a log snapshot, exactly as in the join-only case, by setting snaptime\$\$  current time. Hencethe marked log rows (the ones and only ones to consider for propagation) will be characterized by snaptime\$\$ <= current time and > last snapshot refresh time. See the previous post about the join-only case for a more in-depth discussion.
+The first step in the refresh algorithm is to take a log snapshot, exactly as in the join-only case, by setting snaptime\$\$  current time. Hence the marked log rows (the ones and only ones to consider for propagation) will be characterized by snaptime\$\$ <= current time and > last snapshot refresh time. See the previous post about the join-only case for a more in-depth discussion.
 
 Note: actually, for the sake of precision, two (minor) differences with the join-only case are that the snapshot statement is exactly the same in all versions (there's no special version for 11.1.0.7) and that the log is not "inspected to count the number and type of the logged modifications".
 
@@ -70,18 +70,19 @@ For the WITH ROWID option, the select statement of the DELETE step is (editing f
 ```plsql 
 select distinct m_row$$  
  from (  
-select m_row$$  
- from mlog$_test_t1  
- where snaptime$$ > :1  
- and dmltype$$ != 'I'  
- ) log  
- where m_row$$ not in  
- (  
-select rowid from test_t1 mas  
- where (mas.x1 <> 0.42)  
- and mas.rowid = log.m_row$$  
- );  
+   select m_row$$  
+     from mlog$_test_t1  
+    where snaptime$$ > :1  
+      and dmltype$$ != 'I'  
+  ) log  
+  where m_row$$ not in  
+    (  
+      select rowid from test_t1 mas  
+       where (mas.x1 <> 0.42)  
+         and mas.rowid = log.m_row$$  
+    );  
 ```  
+
 and the delete is a trivial  
 ```plsql
 delete from test_mv where m_row$$ = :1;  
@@ -126,11 +127,11 @@ The **UPSERT step** is a simple select-then-upsert row-by-row processing, where 
 For the WITH ROWID option, the select statement of the UPSERT step is:  
 ```plsql
 select current.x1, current.x2, current.pk1, current.x1x2,  
-        rowidtochar (current.rowid) m_row$$  
+       rowidtochar (current.rowid) m_row$$  
   from (  
     select x1, x2, pk1, x1+x2 as x1x2  
-     from test_t1  
-    where (x1 <> 0.42)  
+      from test_t1  
+     where (x1 <> 0.42)  
   ) current,  
   (  
     select distinct m_row$$  
@@ -164,17 +165,17 @@ select current.x1, current.x2, current.pk1, current.x1x2
     select distinct pk1  
       from mlog_test_t1  
      where snaptime$$ > :1  
-      and dmltype$$ != 'D'  
+       and dmltype$$ != 'D'  
   ) log  
 where current.pk1 = log.pk1;  
 ```
 
 and the update and insert statements are:  
-[sql]  
+```plsql
 update test_mv set x1=:1, x2=:2, pk1=:3, x1x2=:4 where pk1=:3;
 
 insert into test_mv (x1, x2, pk1, x1x2) values (:1, :2, :3, :4);  
-[/sql]
+```
 
 And the same considerations about the substitution of rowid with the primary key hold. The index on the master table on (pk1, x1) might be of help here as well.
 

@@ -14,7 +14,7 @@ meta: {}
 author: Alberto Dell'Era
 permalink: "/blog/2009/08/11/fast-refresh-of-single-table-materialized-views-algorithm-summary/"
 migration_from_wordpress:
-  approved_on: working
+  approved_on: 20241019
 ---
 Today we are going to investigate how Oracle fast refreshes materialized views (MVs) of a single master table, containing no aggregate but, at most, filter predicates and additional column definitions:  
 ```plsql 

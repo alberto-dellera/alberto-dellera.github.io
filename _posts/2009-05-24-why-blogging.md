@@ -10,13 +10,10 @@ status: publish
 categories: []
 tags: []
 meta: {}
-author:
-  login: alberto.dellera
-  email: alberto.dellera@gmail.com
-  display_name: Alberto Dell'Era
-  first_name: Alberto
-  last_name: Dell'Era
+author: Alberto Dell'Era
 permalink: "/blog/2009/05/24/why-blogging/"
+migration_from_wordpress:
+  approved_on: working
 ---
 Mainly because I like to write, and people usually like my writings. So, why not ?
 
@@ -24,5 +21,4 @@ Also - because it is a good way of learning. When I was a student, I remember th
 
 Then there's interaction with others, that will for sure provide me with interesting insights and other topics to investigate, or even a full-blown discussion extending across posts, blog pages and even ... restaurant tables.
 
-So, here I am. Hope that you will find this Oracle blog useful ...
-
+So, here I am. Hope that you will find this humble Oracle blog useful ...

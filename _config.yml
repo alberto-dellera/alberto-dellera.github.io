@@ -22,6 +22,7 @@ url: "" # the base hostname & protocol for your site, e.g. http://example.com
 twitter_username: alberto_dellera
 github_username:  alberto-dellera
 linkedin_username: adellera
+show_excerpts: true
 
 # Build settings
 markdown: kramdown
@@ -32,7 +33,6 @@ kramdown:
   syntax_highlighter: rouge
   extensions: fenced_code_blocks
 theme: minima
-  show_excerpts: true
 plugins:
   - jekyll-feed
 

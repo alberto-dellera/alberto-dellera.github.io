@@ -14,7 +14,7 @@ meta: {}
 author: Alberto Dell'Era
 permalink: "/blog/2009/10/03/cbo-about-the-statistical-definition-of-cardinality-densities-part-i/"
 migration_from_wordpress:
-  approved_on: working
+  approved_on: 20241019
 ---
 Let's explore the concept of cardinality from the point of view of the statistician; this is both to get a clearer vision of the matter (i.e. for fun) and to path the way for understanding the rationale for the "density" statistics as calculated by dbms\_stats (the topic of an upcoming post).
 

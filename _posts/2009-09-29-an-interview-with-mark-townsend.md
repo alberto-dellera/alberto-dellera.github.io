@@ -10,20 +10,16 @@ status: publish
 categories: []
 tags: []
 meta:
-  _sg_subscribe-to-comments: west@obviously.com
-author:
-  login: alberto.dellera
-  email: alberto.dellera@gmail.com
-  display_name: Alberto Dell'Era
-  first_name: Alberto
-  last_name: Dell'Era
+author: Alberto Dell'Era
 permalink: "/blog/2009/09/29/an-interview-with-mark-townsend/"
+migration_from_wordpress:
+  approved_on: working
 ---
-While attending the [11gR2 launch event]( http://www.oracle.com/webapps/events/EventsDetail.jsp?p_eventId=94800&src=6805597&src=6805597&Act=37 ) in Milan last Thursday, I had the distinguished opportunity (invited, as a blogger, by the Oracle team that was organizing the event) to meet [Mark Townsend](http://www.oracle.com/us/corporate/press/Spokespeople/016367) and exchange a few words about the new features of 11gR2 and the Oracle database in general as well.
+While attending the [11gR2 launch event](http://www.oracle.com/webapps/events/EventsDetail.jsp?p_eventId=94800&src=6805597&src=6805597&Act=37 ) in Milan last Thursday, I had the distinguished opportunity (invited, as a blogger, by the Oracle team that was organizing the event) to meet [Mark Townsend](http://www.oracle.com/us/corporate/press/Spokespeople/016367) and exchange a few words about the new features of 11gR2 and the Oracle database in general as well.
 
 For those who don't know, Mark is (among other things) the Vice President in charge of coordinating the Product Managers and a technical expert at the same time, and this rare combination has the advantage that you can ask him about any feature you like at whatever granularity you like, from the strategic level down to the technical gory details. In fact Mark is frequently seen at public events (such as Oracle Open World), speaking to mixed audiences composed of both Engineers and Management.
 
-We spoke about many new features of 11gR2, so much in fact that in order to do justice to the information that Mark very kindly provided me, I will use them as the foundation of some future blog posts. In brief anyway, I noticed that this release has features that are targeted mostly to vastly improve the "grid", but with very interesting features for the "core" as well (my personal favourites being the [in-memory parallel execution]( http://download.oracle.com/docs/cd/E11882_01/server.112/e10881/chapter1.htm#FEATURENO08862) and the new [SCN-based MV log]( http://download.oracle.com/docs/cd/E11882_01/server.112/e10810/refresh.htm#DWHSG0319 ), which I plan to blog about in the very near future).
+We spoke about many new features of 11gR2, so much in fact that in order to do justice to the information that Mark very kindly provided me, I will use them as the foundation of some future blog posts. In brief anyway, I noticed that this release has features that are targeted mostly to vastly improve the "grid", but with very interesting features for the "core" as well (my personal favourites being the *in-memory parallel execution* and the new *SCN-based MV log*, which I plan to blog about in the very near future).
 
 But especially, I didn't miss the unique opportunity to discuss with one of the top players of Oracle Corporation about the amount of information that Oracle shares with its professionals, obviously trying to push for much more. I'm sure that everyone that works with any kind of software product agrees with me on the fact that knowing how the product works is key not only to troubleshooting (that being almost obvious) but to good design also, or perhaps especially; the more you know, the better designer you are going to be.
 
@@ -34,4 +30,3 @@ So in short, from this discussion I have understood that Oracle is willing to sh
 Well, I might add that information sharing, and community involvement as well, is in my opinion one of the main factors of Oracle's success; actually, being able to dig a lot into the inner workings of the product is the reason why I chose an Oracle career ten years ago.
 
 PS I'm back from my vacation and I have a lot of interesting things to investigate at work that look like perfect candidates for being turned into posts, so I will be able to blog more frequently in the future. I also have a series of posts about the CBO that is "almost complete".
-

@@ -15,7 +15,7 @@ permalink: "/blog/2009/09/29/an-interview-with-mark-townsend/"
 migration_from_wordpress:
   approved_on: working
 ---
-While attending the [11gR2 launch event](http://www.oracle.com/webapps/events/EventsDetail.jsp?p_eventId=94800&src=6805597&src=6805597&Act=37 ) in Milan last Thursday, I had the distinguished opportunity (invited, as a blogger, by the Oracle team that was organizing the event) to meet [Mark Townsend](http://www.oracle.com/us/corporate/press/Spokespeople/016367) and exchange a few words about the new features of 11gR2 and the Oracle database in general as well.
+While attending the *11gR2 launch event* in Milan last Thursday, I had the distinguished opportunity (invited, as a blogger, by the Oracle team that was organizing the event) to meet [Mark Townsend](https://www.oracle.com/partners/campaign/ace-newsletter-apr2012-1605004.pdf) and exchange a few words about the new features of 11gR2 and the Oracle database in general as well.
 
 For those who don't know, Mark is (among other things) the Vice President in charge of coordinating the Product Managers and a technical expert at the same time, and this rare combination has the advantage that you can ask him about any feature you like at whatever granularity you like, from the strategic level down to the technical gory details. In fact Mark is frequently seen at public events (such as Oracle Open World), speaking to mixed audiences composed of both Engineers and Management.
 

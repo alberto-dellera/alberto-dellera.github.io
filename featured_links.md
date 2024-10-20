@@ -7,10 +7,15 @@ permalink: /featured_links/
 ### Links (alphabetical order)
 
 [Connor McDonald](https://connor-mcdonald.com/)
+
 [Jonathan Lewis](https://jonathanlewis.wordpress.com/)
+
 [Julian Dyke](http://www.juliandyke.com/)
+
 [Oak Table](http://www.oaktable.net/) (old link)
+
 [Steve Adams](http://www.ixora.com.au/) (old link)
+
 [Wolfgang Breitling](http://www.centrexcc.com/)
 
 ### Blogroll (alphabetical order)

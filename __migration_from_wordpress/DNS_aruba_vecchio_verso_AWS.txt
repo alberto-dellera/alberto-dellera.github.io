@@ -1,0 +1,41 @@
+//A
+//HostName	IPAddress
+A	www	34.247.94.223
+A	webmail	34.247.94.223
+A	webmail	62.149.158.91
+A	smtp	34.247.94.223
+A	pop3	34.247.94.223
+A	mail	34.247.94.223
+A	localhost	127.0.0.1
+A		34.247.94.223
+A	mx1	34.247.94.223
+
+
+//AAAA
+//HostName	IPV6Address
+
+
+//TXT
+//Value	HostName
+TXT	"ad417c75103ff197a83a3e1ab86bf8"	_github-pages-challenge-alberto-dellera
+
+
+//MX
+MX	mx1.adellera.it	10
+
+
+//CNAME
+//HostName	AliasName
+CNAME	_domainconnect	_domainconnect.hst.aruba.it.
+CNAME	ftp	www.adellera.it.
+CNAME	admin	admin.redirect.aruba.it.
+
+
+//NS
+//NameServer	IPAddress
+
+
+//SRV
+//Service	Protocol	Priority	Weight	Port	Target
+
+

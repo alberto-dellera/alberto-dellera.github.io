@@ -19,7 +19,7 @@ description: >- # this means to ignore newlines until "baseurl:"
   This is my ole good blog, mostly on Oracle. Kept because I’m attached to it and because it still contains relevant information 
 baseurl: "" # the subpath of your site, e.g. /blog
 url: "" # the base hostname & protocol for your site, e.g. http://example.com
-twitter_username: alberto_dellera
+# twitter_username: alberto_dellera
 github_username:  alberto-dellera
 linkedin_username: adellera
 show_excerpts: true
